@@ -1,4 +1,5 @@
 import {
+  App as AntdApp,
   Button,
   Card,
   Divider,
@@ -9,7 +10,6 @@ import {
   Table,
   Tag,
   Typography,
-  message,
 } from 'antd';
 import { ClearOutlined, DeleteOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useDebugStore } from '@/store/debugStore';
@@ -24,6 +24,7 @@ interface DebugPanelProps {
 }
 
 export const DebugPanel = ({ currentEnv }: DebugPanelProps) => {
+  const { message } = AntdApp.useApp();
   const {
     visible,
     userId,

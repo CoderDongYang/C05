@@ -33,20 +33,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     try {
       const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
       this.client = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
+        maxRetriesPerRequest: 1,
+        enableReadyCheck: true,
+        connectTimeout: 2000,
+        commandTimeout: 2000,
+        lazyConnect: true,
       });
       this.subscriber = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
+        maxRetriesPerRequest: 1,
+        enableReadyCheck: true,
+        connectTimeout: 2000,
+        commandTimeout: 2000,
+        lazyConnect: true,
       });
 
       this.client.on('error', (err) => {
-        this.logger.error(`Redis client error: ${err.message}`);
+        this.logger.warn(`Redis client error: ${err.message}`);
       });
 
       this.subscriber.on('error', (err) => {
-        this.logger.error(`Redis subscriber error: ${err.message}`);
+        this.logger.warn(`Redis subscriber error: ${err.message}`);
       });
 
       this.subscriber.on('message', (channel, message) => {
@@ -61,10 +67,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         }
       });
 
-      await this.subscriber.subscribe(REDIS_UPDATE_CHANNEL);
-      this.logger.log('Redis service initialized');
+      try {
+        await Promise.race([
+          this.client.connect(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis client connect timeout')), 2000)),
+        ]);
+        await Promise.race([
+          this.subscriber.connect(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis subscriber connect timeout')), 2000)),
+        ]);
+        await this.subscriber.subscribe(REDIS_UPDATE_CHANNEL);
+        this.logger.log('Redis service initialized');
+      } catch (connectErr) {
+        this.logger.warn(`Redis connection failed, running in local-only mode: ${connectErr}`);
+        this.client = null;
+        this.subscriber = null;
+      }
     } catch (e) {
-      this.logger.error(`Failed to initialize Redis: ${e}`);
+      this.logger.warn(`Redis initialization failed, running in local-only mode: ${e}`);
+      this.client = null;
+      this.subscriber = null;
     }
   }
 
@@ -95,6 +117,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async refreshCacheForEnvironment(environment: Environment): Promise<void> {
     try {
+      if (!this.prisma.getIsConnected()) {
+        const emptySnapshot: EnvTogglesSnapshot = {};
+        this.localCache.set(environment, emptySnapshot);
+        this.logger.warn(`DB not connected, using empty snapshot for ${environment}`);
+        return;
+      }
+
       const toggles = await this.prisma.featureToggle.findMany({
         where: { environment },
         select: {
@@ -122,17 +151,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (this.client) {
-        await this.client.set(
-          this.getTogglesKey(environment),
-          JSON.stringify(snapshot),
-        );
+        try {
+          await this.client.set(
+            this.getTogglesKey(environment),
+            JSON.stringify(snapshot),
+          );
+        } catch (redisErr) {
+          this.logger.warn(`Failed to set Redis cache for ${environment}: ${redisErr}`);
+        }
       }
 
       this.localCache.set(environment, snapshot);
       this.logger.log(`Cache refreshed for ${environment}: ${toggles.length} toggles`);
     } catch (e) {
-      this.logger.error(`Failed to refresh cache for ${environment}: ${e}`);
-      throw e;
+      this.logger.warn(`Failed to refresh cache for ${environment}, using empty snapshot: ${e}`);
+      const emptySnapshot: EnvTogglesSnapshot = {};
+      this.localCache.set(environment, emptySnapshot);
     }
   }
 

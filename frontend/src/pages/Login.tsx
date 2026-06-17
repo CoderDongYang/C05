@@ -1,4 +1,4 @@
-import { Button, Card, Form, Input, Typography, message } from 'antd';
+import { App as AntdApp, Button, Card, Form, Input, Typography } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserStore } from '@/store/userStore';
@@ -12,6 +12,7 @@ interface LoginForm {
 }
 
 export const Login = () => {
+  const { message } = AntdApp.useApp();
   const [form] = Form.useForm<LoginForm>();
   const login = useUserStore((s) => s.login);
   const loading = useUserStore((s) => s.loading);

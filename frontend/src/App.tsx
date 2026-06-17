@@ -2,9 +2,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfigProvider, App as AntdApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import { useEffect } from 'react';
 import Login from '@/pages/Login';
 import ToggleList from '@/pages/ToggleList';
 import { AuthGuard } from '@/guards/AuthGuard';
+import { setGlobalMessage } from '@/utils/message';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,6 +17,31 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const AppContent = () => {
+  const { message } = AntdApp.useApp();
+
+  useEffect(() => {
+    setGlobalMessage(message);
+  }, [message]);
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <AuthGuard>
+              <ToggleList />
+            </AuthGuard>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+};
 
 const App = () => {
   return (
@@ -29,20 +56,7 @@ const App = () => {
         }}
       >
         <AntdApp>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/"
-                element={
-                  <AuthGuard>
-                    <ToggleList />
-                  </AuthGuard>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </BrowserRouter>
+          <AppContent />
         </AntdApp>
       </ConfigProvider>
     </QueryClientProvider>

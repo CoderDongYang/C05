@@ -11,6 +11,11 @@ export const useSse = (options: UseSseOptions = {}) => {
   const esRef = useRef<EventSource | null>(null);
   const [connected, setConnected] = useState(false);
   const user = useUserStore((s) => s.user);
+  const onRefreshRef = useRef(options.onRefresh);
+  const onMessageRef = useRef(options.onMessage);
+
+  onRefreshRef.current = options.onRefresh;
+  onMessageRef.current = options.onMessage;
 
   useEffect(() => {
     if (!user) {
@@ -39,18 +44,18 @@ export const useSse = (options: UseSseOptions = {}) => {
     es.addEventListener('refresh', (e) => {
       try {
         const data = e.data ? JSON.parse(e.data) : undefined;
-        options.onRefresh?.(data?.environment);
+        onRefreshRef.current?.(data?.environment);
       } catch {
-        options.onRefresh?.();
+        onRefreshRef.current?.();
       }
     });
 
     es.addEventListener('message', (e) => {
       try {
         const parsed = e.data ? JSON.parse(e.data) : undefined;
-        options.onMessage?.('message', parsed);
+        onMessageRef.current?.('message', parsed);
       } catch {
-        options.onMessage?.('message', e.data);
+        onMessageRef.current?.('message', e.data);
       }
     });
 
@@ -59,7 +64,7 @@ export const useSse = (options: UseSseOptions = {}) => {
       esRef.current = null;
       setConnected(false);
     };
-  }, [user, options.onRefresh, options.onMessage]);
+  }, [user]);
 
   const close = () => {
     if (esRef.current) {

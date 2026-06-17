@@ -1,4 +1,4 @@
-import { Modal, Progress, Slider, Input, InputNumber, Switch, Space, Tag, Divider, Row, Col, Typography, Form, TreeSelect, message } from 'antd';
+import { App as AntdApp, Modal, Progress, Slider, Input, InputNumber, Switch, Space, Tag, Divider, Row, Col, Typography, Form, TreeSelect } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useToggleConfigStore } from '@/store/toggleStore';
@@ -17,6 +17,7 @@ interface ConfigStrategyModalProps {
 }
 
 export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigStrategyModalProps) => {
+  const { message } = AntdApp.useApp();
   const resetFromToggle = useToggleConfigStore((s) => s.resetFromToggle);
   const reset = useToggleConfigStore((s) => s.reset);
   const isGloballyEnabled = useToggleConfigStore((s) => s.isGloballyEnabled);

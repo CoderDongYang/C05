@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  App as AntdApp,
   Avatar,
   Button,
   Dropdown,
@@ -14,7 +15,6 @@ import {
   Tooltip,
   TreeSelect,
   Typography,
-  message,
 } from 'antd';
 import {
   DeleteOutlined,
@@ -50,6 +50,7 @@ const { Text, Title } = Typography;
 const ENVIRONMENTS: Environment[] = ['DEV', 'STAGING', 'PROD'];
 
 export const ToggleList = () => {
+  const { message } = AntdApp.useApp();
   const user = useUserStore((s) => s.user);
   const logout = useUserStore((s) => s.logout);
   const initFromStorage = useUserStore((s) => s.initFromStorage);
@@ -60,7 +61,7 @@ export const ToggleList = () => {
   const [activeEnv, setActiveEnv] = useState<Environment>('DEV');
   const [searchKey, setSearchKey] = useState('');
   const [ownerIds, setOwnerIds] = useState<string[]>([]);
-  const [actionRef, setActionRef] = useState<ActionType | undefined>();
+  const actionRef = useRef<ActionType>();
   const setDebugVisible = useDebugStore((s) => s.setVisible);
   const setDebugEnvironment = useDebugStore((s) => s.setEnvironment);
 
@@ -75,18 +76,23 @@ export const ToggleList = () => {
   const onRefresh = useCallback(
     (env?: string) => {
       if (!env || env === activeEnv) {
-        actionRef?.reload?.();
+        actionRef.current?.reload?.();
       }
       queryClient.invalidateQueries({ queryKey: ['featureToggles'] });
     },
-    [actionRef, activeEnv, queryClient],
+    [activeEnv, queryClient],
   );
 
-  useSse({
-    onRefresh: (env) => {
+  const onSseRefresh = useCallback(
+    (env?: string) => {
       onRefresh(env);
       message.info('收到实时更新，已刷新列表');
     },
+    [onRefresh, message],
+  );
+
+  useSse({
+    onRefresh: onSseRefresh,
   });
 
   useEffect(() => {
@@ -97,7 +103,7 @@ export const ToggleList = () => {
     mutationFn: async (id: string) => mockDeleteFeatureToggle(id),
     onSuccess: () => {
       message.success('删除成功');
-      actionRef?.reload?.();
+      actionRef.current?.reload?.();
     },
     onError: (e) => {
       message.error(e instanceof Error ? e.message : '删除失败');
@@ -108,11 +114,11 @@ export const ToggleList = () => {
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
       mockUpdateFeatureToggle(id, { isGloballyEnabled: enabled }),
     onSuccess: () => {
-      actionRef?.reload?.();
+      actionRef.current?.reload?.();
     },
     onError: (e) => {
       message.error(e instanceof Error ? e.message : '操作失败');
-      actionRef?.reload?.();
+      actionRef.current?.reload?.();
     },
   });
 
@@ -449,7 +455,7 @@ export const ToggleList = () => {
                   value={searchKey}
                   onChange={(e) => setSearchKey(e.target.value)}
                   allowClear
-                  onPressEnter={() => actionRef?.reload?.()}
+                  onPressEnter={() => actionRef.current?.reload?.()}
                 />
                 <TreeSelect
                   style={{ width: 280 }}
@@ -464,7 +470,7 @@ export const ToggleList = () => {
                   maxTagCount="responsive"
                   allowClear
                 />
-                <Button icon={<ReloadOutlined />} onClick={() => actionRef?.reload?.()}>
+                <Button icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload?.()}>
                   刷新
                 </Button>
               </Space>
@@ -496,7 +502,7 @@ export const ToggleList = () => {
           >
             <ProTable<FeatureToggle>
               columns={columns}
-              actionRef={(ref) => setActionRef(ref as ActionType)}
+              actionRef={actionRef}
               rowKey="id"
               search={false}
               options={false}
@@ -536,7 +542,7 @@ export const ToggleList = () => {
             setCurrentToggle(null);
           }}
           onSaved={() => {
-            actionRef?.reload?.();
+            actionRef.current?.reload?.();
           }}
         />
 
@@ -548,7 +554,7 @@ export const ToggleList = () => {
             setCurrentToggle(null);
           }}
           onRollback={() => {
-            actionRef?.reload?.();
+            actionRef.current?.reload?.();
           }}
         />
 

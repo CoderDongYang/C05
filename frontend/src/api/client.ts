@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { getToken, logout } from '@/utils';
-import { message } from 'antd';
+import { getGlobalMessage } from '@/utils/message';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -26,6 +26,7 @@ client.interceptors.request.use(
 client.interceptors.response.use(
   (response) => response.data,
   (error: AxiosError<{ message?: string }>) => {
+    const message = getGlobalMessage();
     if (error.response) {
       const { status, data } = error.response;
       if (status === 401) {

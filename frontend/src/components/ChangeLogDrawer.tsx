@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Button, Drawer, Empty, List, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import { App as AntdApp, Button, Drawer, Empty, List, Popconfirm, Space, Tag, Typography } from 'antd';
 import { HistoryOutlined, RollbackOutlined } from '@ant-design/icons';
 import type { ChangeLog, FeatureToggle } from '@/types';
 import { mockListChangeLogs, mockRollbackChangeLog } from '@/api';
@@ -37,6 +37,7 @@ const formatValue = (key: string, v: unknown): string => {
 };
 
 export const ChangeLogDrawer = ({ open, toggle, onClose, onRollback }: ChangeLogDrawerProps) => {
+  const { message } = AntdApp.useApp();
   const { canRollback } = usePermission();
 
   const { data, isLoading, refetch } = useQuery({

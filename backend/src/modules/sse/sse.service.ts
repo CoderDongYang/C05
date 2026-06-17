@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Subject, Observable } from 'rxjs';
-import { Redis, RedisOptions } from 'ioredis';
+import { Redis } from 'ioredis';
 import { REDIS_UPDATE_CHANNEL } from '../redis/redis.service';
 
 export interface SseMessage {
@@ -20,12 +20,15 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
     try {
       const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
       this.subscriber = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      } as RedisOptions);
+        maxRetriesPerRequest: 1,
+        enableReadyCheck: true,
+        connectTimeout: 2000,
+        commandTimeout: 2000,
+        lazyConnect: true,
+      });
 
       this.subscriber.on('error', (err) => {
-        this.logger.error(`SSE Redis subscriber error: ${err.message}`);
+        this.logger.warn(`SSE Redis subscriber error: ${err.message}`);
       });
 
       this.subscriber.on('message', (channel, message) => {
@@ -43,10 +46,26 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
         }
       });
 
-      await this.subscriber.subscribe(REDIS_UPDATE_CHANNEL);
-      this.logger.log('SSE service initialized');
+      try {
+        await Promise.race([
+          this.subscriber.connect(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SSE Redis connect timeout')), 2000)),
+        ]);
+        await this.subscriber.subscribe(REDIS_UPDATE_CHANNEL);
+        this.logger.log('SSE service initialized with Redis');
+      } catch (connectErr) {
+        this.logger.warn(`SSE Redis connection failed, running without Redis: ${connectErr}`);
+        if (this.subscriber) {
+          this.subscriber.disconnect();
+        }
+        this.subscriber = null;
+      }
     } catch (e) {
-      this.logger.error(`Failed to initialize SSE Redis subscriber: ${e}`);
+      this.logger.warn(`SSE Redis initialization failed, running without Redis: ${e}`);
+      if (this.subscriber) {
+        this.subscriber.disconnect();
+      }
+      this.subscriber = null;
     }
 
     this.pingInterval = setInterval(() => {

@@ -20,6 +20,121 @@ import {
 } from '../../common/enums/role.enum';
 import { JwtPayload } from '../../common/decorators/get-user.decorator';
 
+const MOCK_TOGGLES = [
+  {
+    id: 1,
+    key: 'payment.new_flow',
+    description: '新支付流程',
+    environment: Environment.DEV,
+    isGloballyEnabled: true,
+    rolloutPercentage: 100,
+    whitelist: [],
+    attributeRules: {},
+    ownerId: 1,
+    owner: { id: 1, username: 'admin', email: 'admin@example.com' },
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-15'),
+  },
+  {
+    id: 2,
+    key: 'user.vip_badge',
+    description: 'VIP 会员徽章',
+    environment: Environment.DEV,
+    isGloballyEnabled: true,
+    rolloutPercentage: 50,
+    whitelist: ['user123', 'user456'],
+    attributeRules: { level: { $gte: 5 } },
+    ownerId: 2,
+    owner: { id: 2, username: 'dev', email: 'dev@example.com' },
+    createdAt: new Date('2024-01-05'),
+    updatedAt: new Date('2024-01-20'),
+  },
+  {
+    id: 3,
+    key: 'search.ai_suggest',
+    description: 'AI 搜索建议',
+    environment: Environment.DEV,
+    isGloballyEnabled: false,
+    rolloutPercentage: 0,
+    whitelist: ['tester1'],
+    attributeRules: {},
+    ownerId: 2,
+    owner: { id: 2, username: 'dev', email: 'dev@example.com' },
+    createdAt: new Date('2024-01-10'),
+    updatedAt: new Date('2024-01-25'),
+  },
+  {
+    id: 4,
+    key: 'home.new_banner',
+    description: '首页新 Banner',
+    environment: Environment.STAGING,
+    isGloballyEnabled: true,
+    rolloutPercentage: 100,
+    whitelist: [],
+    attributeRules: {},
+    ownerId: 3,
+    owner: { id: 3, username: 'tester', email: 'tester@example.com' },
+    createdAt: new Date('2024-01-08'),
+    updatedAt: new Date('2024-01-18'),
+  },
+  {
+    id: 5,
+    key: 'checkout.coupon_v2',
+    description: '新版优惠券系统',
+    environment: Environment.STAGING,
+    isGloballyEnabled: true,
+    rolloutPercentage: 30,
+    whitelist: ['testuser1'],
+    attributeRules: {},
+    ownerId: 4,
+    owner: { id: 4, username: 'pm', email: 'pm@example.com' },
+    createdAt: new Date('2024-01-12'),
+    updatedAt: new Date('2024-01-22'),
+  },
+  {
+    id: 6,
+    key: 'profile.dark_mode',
+    description: '深色模式',
+    environment: Environment.PROD,
+    isGloballyEnabled: true,
+    rolloutPercentage: 80,
+    whitelist: ['vipuser1', 'vipuser2'],
+    attributeRules: {},
+    ownerId: 1,
+    owner: { id: 1, username: 'admin', email: 'admin@example.com' },
+    createdAt: new Date('2024-01-03'),
+    updatedAt: new Date('2024-01-28'),
+  },
+  {
+    id: 7,
+    key: 'recommendation.ai_feed',
+    description: 'AI 推荐流',
+    environment: Environment.PROD,
+    isGloballyEnabled: false,
+    rolloutPercentage: 10,
+    whitelist: ['internal_user'],
+    attributeRules: {},
+    ownerId: 4,
+    owner: { id: 4, username: 'pm', email: 'pm@example.com' },
+    createdAt: new Date('2024-01-15'),
+    updatedAt: new Date('2024-01-30'),
+  },
+  {
+    id: 8,
+    key: 'login.social_login',
+    description: '第三方登录',
+    environment: Environment.PROD,
+    isGloballyEnabled: true,
+    rolloutPercentage: 100,
+    whitelist: [],
+    attributeRules: {},
+    ownerId: 2,
+    owner: { id: 2, username: 'dev', email: 'dev@example.com' },
+    createdAt: new Date('2024-01-20'),
+    updatedAt: new Date('2024-02-01'),
+  },
+];
+
 @Injectable()
 export class FeatureTogglesService {
   private readonly logger = new Logger(FeatureTogglesService.name);
@@ -68,6 +183,19 @@ export class FeatureTogglesService {
   async findAll(query: QueryFeatureToggleDto) {
     const { environment, ownerId, key, page = 1, pageSize = 20 } = query;
     const skip = (page - 1) * pageSize;
+
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock toggles data');
+      let filtered = [...MOCK_TOGGLES];
+      if (environment) filtered = filtered.filter((t) => t.environment === environment);
+      if (ownerId) filtered = filtered.filter((t) => t.ownerId === ownerId);
+      if (key) filtered = filtered.filter((t) => t.key.includes(key));
+      
+      filtered.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      const total = filtered.length;
+      const toggles = filtered.slice(skip, skip + pageSize);
+      return { toggles, total, page, pageSize };
+    }
 
     const where: Record<string, unknown> = {};
     if (environment) where.environment = environment;
