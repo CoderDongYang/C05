@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  DEVELOPER
+  TESTER
+  PRODUCT_MANAGER
+  ADMIN
+}
+
+enum Environment {
+  DEV
+  STAGING
+  PROD
+}
+
+enum ChangeType {
+  CREATE
+  UPDATE
+  DELETE
+  ROLLBACK
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        RoleName @unique
+  description String?
+  permissions Json
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  username     String         @unique
+  email        String         @unique
+  passwordHash String
+  roleId       Int
+  role         Role           @relation(fields: [roleId], references: [id])
+  ownedToggles FeatureToggle[]
+  changeLogs   ChangeLog[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model FeatureToggle {
+  id                 Int              @id @default(autoincrement())
+  key                String
+  description        String?
+  ownerId            Int
+  owner              User             @relation(fields: [ownerId], references: [id])
+  environment        Environment
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  isGloballyEnabled  Boolean          @default(false)
+  rolloutPercentage  Int              @default(0)
+  whitelist          Json             @default("[]")
+  attributeRules     Json             @default("{}")
+  changeLogs         ChangeLog[]
+
+  @@unique([key, environment])
+}
+
+model ChangeLog {
+  id              Int         @id @default(autoincrement())
+  featureToggleId Int
+  featureToggle   FeatureToggle @relation(fields: [featureToggleId], references: [id], onDelete: Cascade)
+  userId          Int
+  user            User        @relation(fields: [userId], references: [id])
+  environment     Environment
+  oldValue        Json
+  newValue        Json
+  changeType      ChangeType
+  createdAt       DateTime    @default(now())
+
+  @@index([featureToggleId])
+  @@index([createdAt])
+}
