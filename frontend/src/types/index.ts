@@ -49,6 +49,10 @@ export interface CreateFeatureToggleRequest {
   description: string;
   ownerId: string;
   environment: Environment;
+  isGloballyEnabled?: boolean;
+  rolloutPercentage?: number;
+  whitelist?: string[];
+  attributeRules?: AttributeRules | null;
 }
 
 export interface UpdateFeatureToggleRequest {

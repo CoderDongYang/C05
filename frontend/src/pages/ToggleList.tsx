@@ -479,7 +479,15 @@ export const ToggleList = () => {
                 </Button>
               </Space>
               <Space>
-                <Button type="primary" icon={<PlusOutlined />}>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    setCurrentToggle(null);
+                    setConfigModalOpen(true);
+                  }}
+                  disabled={!canEdit(activeEnv)}
+                >
                   新建开关
                 </Button>
               </Space>
@@ -547,6 +555,7 @@ export const ToggleList = () => {
         <ConfigStrategyModal
           open={configModalOpen}
           toggle={currentToggle}
+          environment={activeEnv}
           onClose={() => {
             setConfigModalOpen(false);
             setCurrentToggle(null);

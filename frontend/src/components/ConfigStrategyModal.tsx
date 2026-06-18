@@ -4,19 +4,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { useToggleConfigStore } from '@/store/toggleStore';
 import { ConditionBuilder } from './ConditionBuilder';
 import { MOCK_OWNER_TREE, ENVIRONMENT_LABELS, formatWhitelist, parseWhitelist } from '@/utils';
-import type { FeatureToggle, UpdateFeatureToggleRequest } from '@/types';
-import { updateFeatureToggle } from '@/api';
+import type { FeatureToggle, UpdateFeatureToggleRequest, CreateFeatureToggleRequest, Environment } from '@/types';
+import { updateFeatureToggle, createFeatureToggle } from '@/api';
 
 const { Text, Title } = Typography;
 
 interface ConfigStrategyModalProps {
   open: boolean;
   toggle: FeatureToggle | null;
+  environment?: Environment;
   onClose: () => void;
   onSaved?: (t: FeatureToggle) => void;
 }
 
-export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigStrategyModalProps) => {
+export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSaved }: ConfigStrategyModalProps) => {
   const { message } = AntdApp.useApp();
   const resetFromToggle = useToggleConfigStore((s) => s.resetFromToggle);
   const reset = useToggleConfigStore((s) => s.reset);
@@ -32,18 +33,31 @@ export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigSt
   const [saving, setSaving] = useState(false);
   const [description, setDescription] = useState('');
   const [ownerId, setOwnerId] = useState('');
+  const [keyValue, setKeyValue] = useState('');
   const [form] = Form.useForm();
 
+  const isCreate = !toggle;
+
   useEffect(() => {
-    if (open && toggle) {
-      resetFromToggle(toggle);
-      setWhitelistText(formatWhitelist(toggle.whitelist));
-      setDescription(toggle.description);
-      setOwnerId(toggle.ownerId);
-      form.setFieldsValue({
-        description: toggle.description,
-        ownerId: toggle.ownerId,
-      });
+    if (open) {
+      if (toggle) {
+        resetFromToggle(toggle);
+        setWhitelistText(formatWhitelist(toggle.whitelist));
+        setDescription(toggle.description);
+        setOwnerId(toggle.ownerId);
+        setKeyValue('');
+        form.setFieldsValue({
+          description: toggle.description,
+          ownerId: toggle.ownerId,
+        });
+      } else {
+        reset();
+        setWhitelistText('');
+        setDescription('');
+        setOwnerId('');
+        setKeyValue('');
+        form.resetFields();
+      }
     }
     return () => {
       if (!open) reset();
@@ -67,19 +81,37 @@ export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigSt
   };
 
   const onSave = async () => {
-    if (!toggle) return;
     try {
       await form.validateFields();
       setSaving(true);
       onWhitelistBlur();
-      const payload: UpdateFeatureToggleRequest = {
-        ...getConfigPayload(),
-        description: description || toggle.description,
-        ownerId: ownerId || toggle.ownerId,
-      };
-      const updated = await updateFeatureToggle(toggle.id, payload);
-      message.success('配置保存成功');
-      onSaved?.(updated);
+      const configPayload = getConfigPayload();
+
+      if (isCreate) {
+        if (!environment) {
+          message.error('缺少环境参数');
+          return;
+        }
+        const createPayload: CreateFeatureToggleRequest = {
+          key: keyValue,
+          description,
+          ownerId,
+          environment,
+          ...configPayload,
+        };
+        const created = await createFeatureToggle(createPayload as CreateFeatureToggleRequest);
+        message.success('新建开关成功');
+        onSaved?.(created);
+      } else {
+        const payload: UpdateFeatureToggleRequest = {
+          ...configPayload,
+          description: description || toggle.description,
+          ownerId: ownerId || toggle.ownerId,
+        };
+        const updated = await updateFeatureToggle(toggle.id, payload);
+        message.success('配置保存成功');
+        onSaved?.(updated);
+      }
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : '保存失败';
@@ -94,23 +126,23 @@ export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigSt
     onClose();
   };
 
-  if (!toggle) return null;
+  const displayEnv = toggle?.environment || environment;
 
   return (
     <Modal
       title={
         <Space>
           <Title level={4} style={{ margin: 0 }}>
-            配置策略
+            {isCreate ? '新建开关' : '配置策略'}
           </Title>
-          <Tag color="blue">{ENVIRONMENT_LABELS[toggle.environment]}</Tag>
-          <Text code>{toggle.key}</Text>
+          {displayEnv && <Tag color="blue">{ENVIRONMENT_LABELS[displayEnv]}</Tag>}
+          {!isCreate && toggle && <Text code>{toggle.key}</Text>}
         </Space>
       }
       open={open}
       onCancel={onCloseInternal}
       onOk={onSave}
-      okText="保存配置"
+      okText={isCreate ? '新建' : '保存配置'}
       cancelText="取消"
       confirmLoading={saving}
       width={860}
@@ -119,6 +151,24 @@ export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigSt
     >
       <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
         <Row gutter={16}>
+          {isCreate && (
+            <Col span={24}>
+              <Form.Item
+                label="开关 Key"
+                name="key"
+                rules={[
+                  { required: true, message: '请输入开关 Key' },
+                  { pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/, message: 'Key 只能包含字母、数字和下划线，且以字母开头' },
+                ]}
+              >
+                <Input
+                  placeholder="例如: new_homepage_feature"
+                  value={keyValue}
+                  onChange={(e) => setKeyValue(e.target.value)}
+                />
+              </Form.Item>
+            </Col>
+          )}
           <Col span={14}>
             <Form.Item
               label="开关描述"
