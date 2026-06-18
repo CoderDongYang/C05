@@ -131,21 +131,27 @@ export const MOCK_OWNER_TREE: OwnerTreeNode[] = [
     key: 'dept-tech',
     children: [
       {
-        title: '前端组',
-        value: 'group-fe',
-        key: 'group-fe',
+        title: '系统组',
+        value: 'group-admin',
+        key: 'group-admin',
         children: [
-          { title: '张三 (zhangsan)', value: 'user-zhangsan', key: 'user-zhangsan' },
-          { title: '李四 (lisi)', value: 'user-lisi', key: 'user-lisi' },
+          { title: '系统管理员 (admin)', value: '1', key: '1' },
         ],
       },
       {
-        title: '后端组',
-        value: 'group-be',
-        key: 'group-be',
+        title: '开发组',
+        value: 'group-dev',
+        key: 'group-dev',
         children: [
-          { title: '王五 (wangwu)', value: 'user-wangwu', key: 'user-wangwu' },
-          { title: '赵六 (zhaoliu)', value: 'user-zhaoliu', key: 'user-zhaoliu' },
+          { title: '张开发 (dev)', value: '2', key: '2' },
+        ],
+      },
+      {
+        title: '测试组',
+        value: 'group-qa',
+        key: 'group-qa',
+        children: [
+          { title: '李测试 (tester)', value: '3', key: '3' },
         ],
       },
     ],
@@ -155,16 +161,7 @@ export const MOCK_OWNER_TREE: OwnerTreeNode[] = [
     value: 'dept-product',
     key: 'dept-product',
     children: [
-      { title: '钱七 (qianqi)', value: 'user-qianqi', key: 'user-qianqi' },
-      { title: '孙八 (sunba)', value: 'user-sunba', key: 'user-sunba' },
-    ],
-  },
-  {
-    title: '测试部',
-    value: 'dept-qa',
-    key: 'dept-qa',
-    children: [
-      { title: '周九 (zhoujiu)', value: 'user-zhoujiu', key: 'user-zhoujiu' },
+      { title: '王产品 (pm)', value: '4', key: '4' },
     ],
   },
 ];

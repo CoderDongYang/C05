@@ -122,7 +122,11 @@ export const getFeatureToggle = async (id: string): Promise<FeatureToggle> => {
 export const createFeatureToggle = async (
   data: CreateFeatureToggleRequest,
 ): Promise<FeatureToggle> => {
-  const res = (await client.post('/feature-toggles', data)) as {
+  const payload = {
+    ...data,
+    ownerId: parseInt(String(data.ownerId), 10),
+  };
+  const res = (await client.post('/feature-toggles', payload)) as {
     code: number;
     data: Record<string, unknown>;
   };
@@ -133,7 +137,11 @@ export const updateFeatureToggle = async (
   id: string,
   data: UpdateFeatureToggleRequest,
 ): Promise<FeatureToggle> => {
-  const res = (await client.put(`/feature-toggles/${id}`, data)) as {
+  const payload: Record<string, unknown> = { ...data };
+  if (payload.ownerId !== undefined) {
+    payload.ownerId = parseInt(String(payload.ownerId), 10);
+  }
+  const res = (await client.put(`/feature-toggles/${id}`, payload)) as {
     code: number;
     data: Record<string, unknown>;
   };

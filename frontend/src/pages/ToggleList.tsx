@@ -528,8 +528,8 @@ export const ToggleList = () => {
               scroll={{ x: 1400 }}
               request={async (params) => {
                 const ownerId =
-                  ownerIds && ownerIds.length > 0 && ownerIds[0].startsWith('user-')
-                    ? parseInt(ownerIds[0].replace('user-', ''), 10)
+                  ownerIds && ownerIds.length > 0
+                    ? parseInt(ownerIds[0], 10)
                     : undefined;
                 const res = await listFeatureToggles({
                   environment: activeEnv,
