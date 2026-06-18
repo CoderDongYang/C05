@@ -161,12 +161,17 @@ export class FeatureTogglesService {
         throw new ForbiddenException('无 STAGING 环境写入权限');
       }
     } else if (env === Environment.PROD) {
+      const isDeleteOrFullWrite = fields.length === 0;
       const isOnlyWhitelist = fields.length === 1 && fields[0] === 'whitelist';
       const isStateOrPercentage =
         fields.every((f) => f === 'isGloballyEnabled' || f === 'rolloutPercentage') &&
         fields.length > 0;
 
-      if (isOnlyWhitelist) {
+      if (isDeleteOrFullWrite) {
+        if (!hasAll && !permissions.includes(Permission.FEATURE_WRITE_PROD)) {
+          throw new ForbiddenException('无 PROD 环境完整写入权限');
+        }
+      } else if (isOnlyWhitelist) {
         if (!hasAll && !permissions.includes(Permission.FEATURE_WRITE_WHITELIST)) {
           throw new ForbiddenException('无白名单修改权限');
         }
@@ -306,8 +311,8 @@ export class FeatureTogglesService {
         ownerId: dto.ownerId,
         isGloballyEnabled: dto.isGloballyEnabled,
         rolloutPercentage: dto.rolloutPercentage,
-        whitelist: dto.whitelist as unknown as never,
-        attributeRules: dto.attributeRules as unknown as never,
+        whitelist: (dto.whitelist ?? []) as unknown as never,
+        attributeRules: (dto.attributeRules ?? {}) as unknown as never,
       },
       include: {
         owner: { select: { id: true, username: true, email: true } },
@@ -342,7 +347,7 @@ export class FeatureTogglesService {
       throw new NotFoundException('功能开关不存在');
     }
 
-    this.checkWritePermission(user, existing.environment, ['all']);
+    this.checkWritePermission(user, existing.environment, []);
 
     const oldValue = {
       key: existing.key,
@@ -353,17 +358,19 @@ export class FeatureTogglesService {
       attributeRules: existing.attributeRules,
     };
 
-    await this.prisma.featureToggle.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.changeLog.create({
+        data: {
+          featureToggleId: id,
+          userId: user.userId,
+          environment: existing.environment,
+          oldValue: oldValue as unknown as never,
+          newValue: {} as unknown as never,
+          changeType: ChangeType.DELETE,
+        },
+      });
 
-    await this.prisma.changeLog.create({
-      data: {
-        featureToggleId: id,
-        userId: user.userId,
-        environment: existing.environment,
-        oldValue: oldValue as unknown as never,
-        newValue: {} as unknown as never,
-        changeType: ChangeType.DELETE,
-      },
+      await tx.featureToggle.delete({ where: { id } });
     });
 
     await this.redisService.publishUpdate(existing.environment);

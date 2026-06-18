@@ -24,6 +24,11 @@ const fieldLabels: Record<string, string> = {
   ownerId: '负责人',
 };
 
+const hasAttributeRules = (v: unknown): boolean => {
+  if (!v || typeof v !== 'object') return false;
+  return Object.keys(v as Record<string, unknown>).length > 0;
+};
+
 const formatValue = (key: string, v: unknown): string => {
   if (v === undefined || v === null) return '空';
   if (key === 'isGloballyEnabled') return v ? '开启' : '关闭';
@@ -32,7 +37,7 @@ const formatValue = (key: string, v: unknown): string => {
     const arr = v as string[];
     return arr.length > 0 ? arr.join(', ') : '[]';
   }
-  if (key === 'attributeRules') return v ? '已配置规则' : '无规则';
+  if (key === 'attributeRules') return hasAttributeRules(v) ? '已配置规则' : '无规则';
   return String(v);
 };
 

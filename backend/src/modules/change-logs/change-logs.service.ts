@@ -122,6 +122,9 @@ export class ChangeLogsService {
     const updatedToggle = await this.prisma.featureToggle.update({
       where: { id: toggle.id },
       data: updateData as unknown as never,
+      include: {
+        owner: { select: { id: true, username: true, email: true } },
+      },
     });
 
     await this.prisma.changeLog.create({
