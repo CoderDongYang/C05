@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { RolloutUtil } from '../../common/utils/rollout.util';
 import {
   CreateFeatureToggleDto,
   UpdateFeatureToggleDto,
   QueryFeatureToggleDto,
+  DebugPreviewDto,
 } from './dto/feature-toggle.dto';
 import {
   Environment,
@@ -142,6 +144,7 @@ export class FeatureTogglesService {
   constructor(
     private prisma: PrismaService,
     private redisService: RedisService,
+    private rolloutUtil: RolloutUtil,
   ) {}
 
   private checkWritePermission(user: JwtPayload, env: Environment, fields: string[]): void {
@@ -375,5 +378,131 @@ export class FeatureTogglesService {
 
     await this.redisService.publishUpdate(existing.environment);
     return { success: true };
+  }
+
+  async debugPreview(dto: DebugPreviewDto) {
+    const { environment, userId, tags } = dto;
+
+    let toggles: Array<{
+      id: number;
+      key: string;
+      description: string | null;
+      isGloballyEnabled: boolean;
+      rolloutPercentage: number;
+      whitelist: string[];
+      attributeRules: Record<string, unknown>;
+    }>;
+
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock toggles for debug preview');
+      toggles = MOCK_TOGGLES
+        .filter((t) => t.environment === environment)
+        .map((t) => ({
+          id: t.id,
+          key: t.key,
+          description: t.description,
+          isGloballyEnabled: t.isGloballyEnabled,
+          rolloutPercentage: t.rolloutPercentage,
+          whitelist: t.whitelist as string[],
+          attributeRules: t.attributeRules as Record<string, unknown>,
+        }));
+    } else {
+      const rawToggles = await this.prisma.featureToggle.findMany({
+        where: { environment },
+        select: {
+          id: true,
+          key: true,
+          description: true,
+          isGloballyEnabled: true,
+          rolloutPercentage: true,
+          whitelist: true,
+          attributeRules: true,
+        },
+      });
+      toggles = rawToggles.map((t) => ({
+        id: t.id,
+        key: t.key,
+        description: t.description,
+        isGloballyEnabled: t.isGloballyEnabled,
+        rolloutPercentage: t.rolloutPercentage,
+        whitelist: (t.whitelist as string[]) || [],
+        attributeRules: (t.attributeRules as Record<string, unknown>) || {},
+      }));
+    }
+
+    const items = toggles.map((t) => {
+      const reasons: string[] = [];
+
+      if (!t.isGloballyEnabled) {
+        return {
+          toggleId: t.id,
+          toggleKey: t.key,
+          isMatched: false,
+          matchReason: '全量开关关闭',
+        };
+      }
+
+      reasons.push('全量开关开启');
+
+      const inWhitelist = this.rolloutUtil.isInWhitelist(userId, t.whitelist as string[]);
+      if (inWhitelist) {
+        reasons.push(`用户 ${userId || ''} 在白名单中`);
+        return {
+          toggleId: t.id,
+          toggleKey: t.key,
+          isMatched: true,
+          matchReason: reasons.join('; '),
+        };
+      }
+
+      const hasRules =
+        t.attributeRules && Object.keys(t.attributeRules).length > 0;
+      if (hasRules) {
+        const rulesMatch = this.rolloutUtil.evaluateAttributeRules(
+          t.attributeRules as never,
+          tags,
+        );
+        if (!rulesMatch) {
+          reasons.push('属性规则不匹配');
+          return {
+            toggleId: t.id,
+            toggleKey: t.key,
+            isMatched: false,
+            matchReason: reasons.join('; '),
+          };
+        }
+        reasons.push('属性规则匹配');
+      }
+
+      if (t.rolloutPercentage >= 100) {
+        return {
+          toggleId: t.id,
+          toggleKey: t.key,
+          isMatched: true,
+          matchReason: reasons.join('; '),
+        };
+      }
+
+      const percentageHit = this.rolloutUtil.checkPercentage(userId, t.rolloutPercentage);
+      if (percentageHit) {
+        reasons.push(`灰度比例 ${t.rolloutPercentage}% 命中`);
+        return {
+          toggleId: t.id,
+          toggleKey: t.key,
+          isMatched: true,
+          matchReason: reasons.join('; '),
+        };
+      }
+
+      reasons.push(`灰度比例 ${t.rolloutPercentage}% 未命中`);
+      return {
+        toggleId: t.id,
+        toggleKey: t.key,
+        isMatched: false,
+        matchReason: reasons.join('; '),
+      };
+    });
+
+    return { items };
   }
 }

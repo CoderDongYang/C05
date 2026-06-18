@@ -97,3 +97,16 @@ export class QueryFeatureToggleDto {
   @IsInt()
   pageSize?: number;
 }
+
+export class DebugPreviewDto {
+  @IsEnum(Environment)
+  environment: Environment;
+
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @IsOptional()
+  @IsObject()
+  tags?: Record<string, unknown>;
+}

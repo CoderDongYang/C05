@@ -518,6 +518,7 @@ export const ToggleList = () => {
               rowKey="id"
               search={false}
               options={false}
+              params={{ activeEnv, searchKey, ownerIds }}
               pagination={{
                 defaultPageSize: 10,
                 showSizeChanger: true,
@@ -528,14 +529,14 @@ export const ToggleList = () => {
               scroll={{ x: 1400 }}
               request={async (params) => {
                 const ownerId =
-                  ownerIds && ownerIds.length > 0
-                    ? parseInt(ownerIds[0], 10)
+                  params.ownerIds && params.ownerIds.length > 0
+                    ? parseInt(params.ownerIds[0], 10)
                     : undefined;
                 const res = await listFeatureToggles({
-                  environment: activeEnv,
+                  environment: params.activeEnv,
                   ownerIds: ownerId ? [String(ownerId)] : undefined,
-                  searchKey: searchKey.trim() || undefined,
-                  key: searchKey.trim() || undefined,
+                  searchKey: params.searchKey?.trim() || undefined,
+                  key: params.searchKey?.trim() || undefined,
                   ownerId,
                   page: params.current,
                   pageSize: params.pageSize,

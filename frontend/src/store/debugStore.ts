@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { DebugContext, DebugPreset, DebugPreviewItem, Environment } from '@/types';
 import { generateId } from '@/utils';
-import { mockPreviewDebugConfig } from '@/api';
+import { previewDebugConfig } from '@/api';
 
 interface TagItem {
   id: string;
@@ -101,7 +101,7 @@ export const useDebugStore = create<DebugState>()(
       });
       try {
         const ctx = s.getContext();
-        const res = await mockPreviewDebugConfig(s.environment, ctx);
+        const res = await previewDebugConfig(s.environment, ctx);
         set((state) => {
           state.result = res.items;
           state.loading = false;

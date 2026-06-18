@@ -16,6 +16,7 @@ import {
   CreateFeatureToggleDto,
   UpdateFeatureToggleDto,
   QueryFeatureToggleDto,
+  DebugPreviewDto,
 } from './dto/feature-toggle.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/roles.decorator';
@@ -65,5 +66,11 @@ export class FeatureTogglesController {
     @GetUser() user: JwtPayload,
   ) {
     return this.featureTogglesService.remove(id, user);
+  }
+
+  @Post('debug-preview')
+  @Permissions(Permission.FEATURE_READ)
+  debugPreview(@Body() dto: DebugPreviewDto) {
+    return this.featureTogglesService.debugPreview(dto);
   }
 }

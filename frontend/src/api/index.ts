@@ -3,6 +3,7 @@ import type {
   ChangeLog,
   CreateFeatureToggleRequest,
   DebugContext,
+  DebugPreviewItem,
   DebugPreviewResponse,
   Environment,
   FeatureToggle,
@@ -175,17 +176,28 @@ export const rollbackChangeLog = async (changeLogId: string): Promise<FeatureTog
   return adaptToggle(res.data.toggle);
 };
 
-export const previewDebugConfig = (
+export const previewDebugConfig = async (
   env: Environment,
   context: DebugContext,
 ): Promise<DebugPreviewResponse> => {
-  return client.get('/sdk/config', {
-    params: {
-      env,
-      userId: context.userId,
-      tags: JSON.stringify(context.tags),
-    },
-  });
+  const res = (await client.post('/feature-toggles/debug-preview', {
+    environment: env,
+    userId: context.userId,
+    tags: context.tags,
+  })) as {
+    code: number;
+    data: {
+      items: DebugPreviewItem[];
+    };
+  };
+  return {
+    items: (res.data.items || []).map((item) => ({
+      toggleId: String(item.toggleId),
+      toggleKey: item.toggleKey,
+      isMatched: item.isMatched,
+      matchReason: item.matchReason,
+    })),
+  };
 };
 
 export const mockLogin = (username: string, password: string): Promise<User> => {
