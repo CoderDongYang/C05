@@ -88,7 +88,7 @@ export class AuthService {
       return null;
     }
 
-    const permissions = user.role.permissions as string[];
+    const permissions = ROLE_PERMISSIONS[user.role.name as RoleName] || [];
 
     return {
       userId: user.id,

@@ -37,7 +37,11 @@ import { useUserStore } from '@/store/userStore';
 import { useDebugStore } from '@/store/debugStore';
 import { ENVIRONMENT_LABELS, MOCK_OWNER_TREE, ROLE_LABELS } from '@/utils';
 import type { Environment, FeatureToggle } from '@/types';
-import { mockDeleteFeatureToggle, mockListFeatureToggles, mockUpdateFeatureToggle } from '@/api';
+import {
+  deleteFeatureToggle,
+  listFeatureToggles,
+  updateFeatureToggle,
+} from '@/api';
 import { usePermission } from '@/hooks/usePermission';
 import { useSse } from '@/hooks/useSse';
 import { DebugPanel } from '@/components/DebugPanel';
@@ -100,7 +104,7 @@ export const ToggleList = () => {
   }, [activeEnv, setDebugEnvironment]);
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => mockDeleteFeatureToggle(id),
+    mutationFn: async (id: string) => deleteFeatureToggle(id),
     onSuccess: () => {
       message.success('删除成功');
       actionRef.current?.reload?.();
@@ -112,7 +116,7 @@ export const ToggleList = () => {
 
   const toggleGlobalMutation = useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
-      mockUpdateFeatureToggle(id, { isGloballyEnabled: enabled }),
+      updateFeatureToggle(id, { isGloballyEnabled: enabled }),
     onSuccess: () => {
       actionRef.current?.reload?.();
     },
@@ -515,10 +519,16 @@ export const ToggleList = () => {
               }}
               scroll={{ x: 1400 }}
               request={async (params) => {
-                const res = await mockListFeatureToggles({
+                const ownerId =
+                  ownerIds && ownerIds.length > 0 && ownerIds[0].startsWith('user-')
+                    ? parseInt(ownerIds[0].replace('user-', ''), 10)
+                    : undefined;
+                const res = await listFeatureToggles({
                   environment: activeEnv,
-                  ownerIds,
+                  ownerIds: ownerId ? [String(ownerId)] : undefined,
                   searchKey: searchKey.trim() || undefined,
+                  key: searchKey.trim() || undefined,
+                  ownerId,
                   page: params.current,
                   pageSize: params.pageSize,
                 });

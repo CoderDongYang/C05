@@ -5,7 +5,7 @@ import { useToggleConfigStore } from '@/store/toggleStore';
 import { ConditionBuilder } from './ConditionBuilder';
 import { MOCK_OWNER_TREE, ENVIRONMENT_LABELS, formatWhitelist, parseWhitelist } from '@/utils';
 import type { FeatureToggle, UpdateFeatureToggleRequest } from '@/types';
-import { mockUpdateFeatureToggle } from '@/api';
+import { updateFeatureToggle } from '@/api';
 
 const { Text, Title } = Typography;
 
@@ -77,7 +77,7 @@ export const ConfigStrategyModal = ({ open, toggle, onClose, onSaved }: ConfigSt
         description: description || toggle.description,
         ownerId: ownerId || toggle.ownerId,
       };
-      const updated = await mockUpdateFeatureToggle(toggle.id, payload);
+      const updated = await updateFeatureToggle(toggle.id, payload);
       message.success('配置保存成功');
       onSaved?.(updated);
       onClose();

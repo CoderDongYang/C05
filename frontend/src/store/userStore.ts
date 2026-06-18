@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { User } from '@/types';
 import { getUser, setUser, logout as clearAuth } from '@/utils';
-import { mockLogin } from '@/api';
+import { login } from '@/api';
 import { setToken } from '@/utils';
 
 interface UserState {
@@ -28,7 +28,7 @@ export const useUserStore = create<UserState>()(
         state.loading = true;
       });
       try {
-        const user = await mockLogin(username, password);
+        const user = await login({ username, password });
         setToken(user.token);
         setUser(user);
         set((state) => {

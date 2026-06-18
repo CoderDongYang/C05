@@ -8,6 +8,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.FEATURE_WRITE_DEV,
     Permission.FEATURE_WRITE_STAGING,
     Permission.CHANGELOG_READ,
+    Permission.CHANGELOG_ROLLBACK,
   ],
   [RoleName.TESTER]: [
     Permission.FEATURE_READ,

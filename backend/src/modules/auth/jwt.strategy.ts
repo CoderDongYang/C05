@@ -3,6 +3,8 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../../common/decorators/get-user.decorator';
+import { RoleName } from '../../common/enums/role.enum';
+import { ROLE_PERMISSIONS } from '../../common/config/permissions.config';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -26,7 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('用户不存在或已被删除');
     }
 
-    const permissions = user.role.permissions as string[];
+    const permissions = ROLE_PERMISSIONS[user.role.name as RoleName] || [];
 
     return {
       userId: user.id,

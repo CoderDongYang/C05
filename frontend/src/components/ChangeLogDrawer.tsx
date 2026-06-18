@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { App as AntdApp, Button, Drawer, Empty, List, Popconfirm, Space, Tag, Typography } from 'antd';
 import { HistoryOutlined, RollbackOutlined } from '@ant-design/icons';
 import type { ChangeLog, FeatureToggle } from '@/types';
-import { mockListChangeLogs, mockRollbackChangeLog } from '@/api';
+import { listChangeLogs, rollbackChangeLog } from '@/api';
 import { ENVIRONMENT_LABELS } from '@/utils';
 import { usePermission } from '@/hooks/usePermission';
 
@@ -45,14 +45,14 @@ export const ChangeLogDrawer = ({ open, toggle, onClose, onRollback }: ChangeLog
     enabled: open && !!toggle?.id,
     queryFn: async () => {
       if (!toggle?.id) return [];
-      return mockListChangeLogs(toggle.id);
+      return listChangeLogs(toggle.id);
     },
   });
 
   const handleRollback = async (log: ChangeLog) => {
     if (!toggle) return;
     try {
-      const t = await mockRollbackChangeLog(toggle.id, log.id);
+      const t = await rollbackChangeLog(log.id);
       message.success('已回滚到该版本');
       onRollback?.(t);
       refetch();

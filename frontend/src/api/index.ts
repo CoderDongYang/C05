@@ -13,52 +13,153 @@ import type {
   User,
 } from '@/types';
 
-export const login = (data: LoginRequest): Promise<User> => {
-  return client.post('/auth/login', data);
+const adaptToggle = (raw: Record<string, unknown>): FeatureToggle => {
+  const owner = (raw.owner as Record<string, unknown>) || {};
+  return {
+    id: String(raw.id),
+    key: raw.key as string,
+    description: (raw.description as string) || '',
+    ownerId: String(raw.ownerId),
+    ownerName: (owner.username as string) || (raw.ownerId as string),
+    environment: raw.environment as Environment,
+    isGloballyEnabled: raw.isGloballyEnabled as boolean,
+    rolloutPercentage: (raw.rolloutPercentage as number) || 0,
+    whitelist: (raw.whitelist as string[]) || [],
+    attributeRules: (raw.attributeRules as FeatureToggle['attributeRules']) || null,
+    createdAt: new Date(raw.createdAt as string).toISOString(),
+    updatedAt: new Date(raw.updatedAt as string).toISOString(),
+  };
 };
 
-export const getCurrentUser = (): Promise<User> => {
-  return client.get('/auth/me');
+const adaptChangeLog = (raw: Record<string, unknown>): ChangeLog => {
+  const user = (raw.user as Record<string, unknown>) || {};
+  return {
+    id: String(raw.id),
+    featureToggleId: String(raw.featureToggleId),
+    userId: String(raw.userId),
+    userName: (user.username as string) || (raw.userId as string),
+    environment: raw.environment as Environment,
+    oldValue: (raw.oldValue as Partial<FeatureToggle>) || {},
+    newValue: (raw.newValue as Partial<FeatureToggle>) || {},
+    changeType: raw.changeType as string,
+    createdAt: new Date(raw.createdAt as string).toISOString(),
+  };
 };
 
-export const listFeatureToggles = (
+const adaptUser = (
+  raw: Record<string, unknown>,
+  token: string,
+): User => {
+  return {
+    id: String(raw.userId),
+    username: raw.username as string,
+    name: (raw.username as string) || (raw.email as string) || '',
+    role: raw.roleName as User['role'],
+    token,
+  };
+};
+
+export const login = async (data: LoginRequest): Promise<User> => {
+  const res = (await client.post('/auth/login', data)) as {
+    code: number;
+    data: {
+      accessToken: string;
+      user: Record<string, unknown>;
+    };
+  };
+  return adaptUser(res.data.user, res.data.accessToken);
+};
+
+export const getCurrentUser = async (): Promise<User> => {
+  const res = (await client.get('/auth/me')) as {
+    code: number;
+    data: Record<string, unknown>;
+  };
+  const token = (() => {
+    try {
+      const rawToken = localStorage.getItem('feature-toggle-token');
+      return rawToken || '';
+    } catch {
+      return '';
+    }
+  })();
+  return adaptUser(res.data, token);
+};
+
+export const listFeatureToggles = async (
   params: ListFeatureTogglesQuery,
 ): Promise<PaginatedResponse<FeatureToggle>> => {
-  return client.get('/feature-toggles', { params });
+  const res = (await client.get('/feature-toggles', { params })) as {
+    code: number;
+    data: {
+      toggles: Record<string, unknown>[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+  };
+  return {
+    items: (res.data.toggles || []).map(adaptToggle),
+    total: res.data.total,
+    page: res.data.page,
+    pageSize: res.data.pageSize,
+  };
 };
 
-export const getFeatureToggle = (id: string): Promise<FeatureToggle> => {
-  return client.get(`/feature-toggles/${id}`);
+export const getFeatureToggle = async (id: string): Promise<FeatureToggle> => {
+  const res = (await client.get(`/feature-toggles/${id}`)) as {
+    code: number;
+    data: Record<string, unknown>;
+  };
+  return adaptToggle(res.data);
 };
 
-export const createFeatureToggle = (
+export const createFeatureToggle = async (
   data: CreateFeatureToggleRequest,
 ): Promise<FeatureToggle> => {
-  return client.post('/feature-toggles', data);
+  const res = (await client.post('/feature-toggles', data)) as {
+    code: number;
+    data: Record<string, unknown>;
+  };
+  return adaptToggle(res.data);
 };
 
-export const updateFeatureToggle = (
+export const updateFeatureToggle = async (
   id: string,
   data: UpdateFeatureToggleRequest,
 ): Promise<FeatureToggle> => {
-  return client.put(`/feature-toggles/${id}`, data);
+  const res = (await client.put(`/feature-toggles/${id}`, data)) as {
+    code: number;
+    data: Record<string, unknown>;
+  };
+  return adaptToggle(res.data);
 };
 
 export const deleteFeatureToggle = (id: string): Promise<void> => {
   return client.delete(`/feature-toggles/${id}`);
 };
 
-export const listChangeLogs = (
-  toggleId: string,
-): Promise<ChangeLog[]> => {
-  return client.get(`/feature-toggles/${toggleId}/change-logs`);
+export const listChangeLogs = async (toggleId: string): Promise<ChangeLog[]> => {
+  const res = (await client.get(`/change-logs/toggle/${toggleId}`, {
+    params: { page: 1, pageSize: 50 },
+  })) as {
+    code: number;
+    data: {
+      logs: Record<string, unknown>[];
+    };
+  };
+  return (res.data.logs || []).map(adaptChangeLog);
 };
 
-export const rollbackChangeLog = (
-  toggleId: string,
-  changeLogId: string,
-): Promise<FeatureToggle> => {
-  return client.post(`/feature-toggles/${toggleId}/rollback`, { changeLogId });
+export const rollbackChangeLog = async (changeLogId: string): Promise<FeatureToggle> => {
+  const res = (await client.post(`/change-logs/${changeLogId}/rollback`)) as {
+    code: number;
+    data: {
+      success: boolean;
+      toggle: Record<string, unknown>;
+    };
+  };
+  return adaptToggle(res.data.toggle);
 };
 
 export const previewDebugConfig = (
