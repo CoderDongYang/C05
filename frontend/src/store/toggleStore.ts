@@ -43,6 +43,8 @@ interface ToggleConfigState {
 
 const cloneRules = (rules: AttributeRules | null): AttributeRules | null => {
   if (!rules) return null;
+  if (typeof rules !== 'object') return null;
+  if (!rules.root || !rules.root.logic) return null;
   return JSON.parse(JSON.stringify(rules));
 };
 

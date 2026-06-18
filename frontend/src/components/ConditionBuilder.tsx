@@ -235,7 +235,7 @@ export const ConditionBuilder = () => {
           属性规则与白名单、灰度比例是 OR 关系，任一命中即生效
         </Text>
       </div>
-      {attributeRules && (
+      {attributeRules && attributeRules.root && attributeRules.root.logic && (
         <ConditionGroupBlock group={attributeRules.root} isRoot={true} />
       )}
       {!attributeRules && (

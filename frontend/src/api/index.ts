@@ -15,6 +15,11 @@ import type {
 
 const adaptToggle = (raw: Record<string, unknown>): FeatureToggle => {
   const owner = (raw.owner as Record<string, unknown>) || {};
+  const rawRules = raw.attributeRules as Record<string, unknown> | null | undefined;
+  const attributeRules =
+    rawRules && typeof rawRules === 'object' && Object.keys(rawRules).length > 0
+      ? (rawRules as FeatureToggle['attributeRules'])
+      : null;
   return {
     id: String(raw.id),
     key: raw.key as string,
@@ -25,7 +30,7 @@ const adaptToggle = (raw: Record<string, unknown>): FeatureToggle => {
     isGloballyEnabled: raw.isGloballyEnabled as boolean,
     rolloutPercentage: (raw.rolloutPercentage as number) || 0,
     whitelist: (raw.whitelist as string[]) || [],
-    attributeRules: (raw.attributeRules as FeatureToggle['attributeRules']) || null,
+    attributeRules,
     createdAt: new Date(raw.createdAt as string).toISOString(),
     updatedAt: new Date(raw.updatedAt as string).toISOString(),
   };

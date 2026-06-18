@@ -96,6 +96,8 @@ export interface ListFeatureTogglesQuery {
   environment: Environment;
   ownerIds?: string[];
   searchKey?: string;
+  key?: string;
+  ownerId?: number;
   page?: number;
   pageSize?: number;
 }
