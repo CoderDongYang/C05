@@ -6,9 +6,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RedisService } from '../redis/redis.service';
+import { RedisService, ToggleChangePayload } from '../redis/redis.service';
 import { ChangeType, RoleName, Permission, Environment } from '../../common/enums/role.enum';
 import { JwtPayload } from '../../common/decorators/get-user.decorator';
+import { SseService } from '../sse/sse.service';
 
 @Injectable()
 export class ChangeLogsService {
@@ -17,6 +18,7 @@ export class ChangeLogsService {
   constructor(
     private prisma: PrismaService,
     private redisService: RedisService,
+    private sseService: SseService,
   ) {}
 
   private checkRollbackPermission(user: JwtPayload, env: Environment): void {
@@ -153,7 +155,7 @@ export class ChangeLogsService {
       });
       if (u) operatorName = u.username;
     } catch (e) {}
-    await this.redisService.publishUpdate({
+    const payload: ToggleChangePayload = {
       toggleId: toggle.id,
       toggleKey: toggle.key,
       environment: toggle.environment,
@@ -163,7 +165,21 @@ export class ChangeLogsService {
       oldEnabled: toggle.isGloballyEnabled,
       newEnabled: updatedToggle.isGloballyEnabled,
       timestamp: new Date().toISOString(),
-    });
+    };
+    await this.redisService.publishUpdate(payload);
+    if (!this.redisService.getClient()) {
+      const now = new Date().toISOString();
+      this.sseService.broadcast({
+        type: 'refresh',
+        data: { environment: toggle.environment },
+        timestamp: now,
+      });
+      this.sseService.broadcast({
+        type: 'toggle_change',
+        data: payload as unknown as Record<string, unknown>,
+        timestamp: now,
+      });
+    }
 
     this.logger.log(
       `User ${user.username} rolled back toggle ${toggle.key} (${toggle.environment}) using changelog #${changeLogId}`,

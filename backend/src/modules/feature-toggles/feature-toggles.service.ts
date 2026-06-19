@@ -9,8 +9,9 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { RedisService, ToggleChangeAction } from '../redis/redis.service';
+import { RedisService, ToggleChangeAction, ToggleChangePayload } from '../redis/redis.service';
 import { RolloutUtil } from '../../common/utils/rollout.util';
+import { SseService } from '../sse/sse.service';
 import {
   CreateFeatureToggleDto,
   UpdateFeatureToggleDto,
@@ -182,6 +183,7 @@ export class FeatureTogglesService {
     private prisma: PrismaService,
     private redisService: RedisService,
     private rolloutUtil: RolloutUtil,
+    private sseService: SseService,
   ) {}
 
   private async publishToggleChange(
@@ -199,7 +201,7 @@ export class FeatureTogglesService {
         });
         if (u) operatorName = u.username;
       }
-      await this.redisService.publishUpdate({
+      const payload: ToggleChangePayload = {
         toggleId: toggle.id,
         toggleKey: toggle.key,
         environment: toggle.environment,
@@ -209,7 +211,21 @@ export class FeatureTogglesService {
         oldEnabled,
         newEnabled: toggle.isGloballyEnabled,
         timestamp: new Date().toISOString(),
-      });
+      };
+      await this.redisService.publishUpdate(payload);
+      if (!this.redisService.getClient()) {
+        const now = new Date().toISOString();
+        this.sseService.broadcast({
+          type: 'refresh',
+          data: { environment: toggle.environment },
+          timestamp: now,
+        });
+        this.sseService.broadcast({
+          type: 'toggle_change',
+          data: payload as unknown as Record<string, unknown>,
+          timestamp: now,
+        });
+      }
     } catch (e) {
       this.logger.error(`Failed to publish toggle change event: ${e}`);
     }
