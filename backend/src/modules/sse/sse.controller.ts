@@ -20,7 +20,7 @@ export class SseController {
       map((message) => ({
         type: message.type,
         data: {
-          ...message,
+          ...message.data,
           currentUserId: userId,
         },
       })),
