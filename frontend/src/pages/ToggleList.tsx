@@ -6,6 +6,7 @@ import {
   Dropdown,
   Input,
   Layout,
+  Modal,
   Popconfirm,
   Progress,
   Space,
@@ -15,7 +16,9 @@ import {
   Tooltip,
   TreeSelect,
   Typography,
+  notification,
 } from 'antd';
+import { BellOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -36,9 +39,10 @@ import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { useUserStore } from '@/store/userStore';
 import { useDebugStore } from '@/store/debugStore';
 import { ENVIRONMENT_LABELS, MOCK_OWNER_TREE, ROLE_LABELS } from '@/utils';
-import type { Environment, FeatureToggle } from '@/types';
+import type { Environment, FeatureToggle, ToggleChangeEvent } from '@/types';
 import {
   deleteFeatureToggle,
+  forceToggle,
   listFeatureToggles,
   updateFeatureToggle,
 } from '@/api';
@@ -55,6 +59,7 @@ const ENVIRONMENTS: Environment[] = ['DEV', 'STAGING', 'PROD'];
 
 export const ToggleList = () => {
   const { message } = AntdApp.useApp();
+  const [api, contextHolder] = notification.useNotification();
   const user = useUserStore((s) => s.user);
   const logout = useUserStore((s) => s.logout);
   const initFromStorage = useUserStore((s) => s.initFromStorage);
@@ -72,6 +77,11 @@ export const ToggleList = () => {
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [currentToggle, setCurrentToggle] = useState<FeatureToggle | null>(null);
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [pendingToggle, setPendingToggle] = useState<{ id: string; enabled: boolean } | null>(null);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [dependencyErrorMessage, setDependencyErrorMessage] = useState('');
 
   useEffect(() => {
     initFromStorage();
@@ -90,13 +100,56 @@ export const ToggleList = () => {
   const onSseRefresh = useCallback(
     (env?: string) => {
       onRefresh(env);
-      message.info('收到实时更新，已刷新列表');
     },
-    [onRefresh, message],
+    [onRefresh],
+  );
+
+  const onToggleChange = useCallback(
+    (event: ToggleChangeEvent) => {
+      if (event.currentUserId && event.operatorId === event.currentUserId) {
+        return;
+      }
+      if (event.environment !== activeEnv) {
+        onRefresh(event.environment);
+      }
+      const actionText: Record<ToggleChangeEvent['action'], string> = {
+        enable: '开启',
+        disable: '关闭',
+        create: '创建',
+        update: '更新',
+        delete: '删除',
+      };
+      const text = actionText[event.action] || event.action;
+      const description = (() => {
+        if (event.action === 'enable' || event.action === 'disable') {
+          return `开关 [${event.toggleKey}] 已被 ${event.operatorName} ${text}，请留意监控看板`;
+        }
+        if (event.action === 'delete') {
+          return `开关 [${event.toggleKey}] 已被 ${event.operatorName} 删除`;
+        }
+        if (event.action === 'create') {
+          return `开关 [${event.toggleKey}] 已被 ${event.operatorName} 创建`;
+        }
+        return `开关 [${event.toggleKey}] 已被 ${event.operatorName} 更新`;
+      })();
+
+      api.open({
+        message: '温馨提醒',
+        description,
+        icon: <BellOutlined style={{ color: '#1890ff' }} />,
+        placement: 'topRight',
+        duration: 6,
+        style: {
+          marginTop: 60,
+        },
+      });
+    },
+    [activeEnv, api, onRefresh],
   );
 
   useSse({
     onRefresh: onSseRefresh,
+    onToggleChange,
   });
 
   useEffect(() => {
@@ -114,17 +167,50 @@ export const ToggleList = () => {
     },
   });
 
-  const toggleGlobalMutation = useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
-      updateFeatureToggle(id, { isGloballyEnabled: enabled }),
-    onSuccess: () => {
-      actionRef.current?.reload?.();
+  const handleToggleGlobal = useCallback(
+    async (row: FeatureToggle, enabled: boolean) => {
+      try {
+        await updateFeatureToggle(row.id, { isGloballyEnabled: enabled });
+        actionRef.current?.reload?.();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '操作失败';
+        if (enabled && (msg.includes('依赖开关') || msg.includes('依赖'))) {
+          setPendingToggle({ id: row.id, enabled });
+          setDependencyErrorMessage(msg);
+          setPasswordInput('');
+          setPasswordModalOpen(true);
+        } else {
+          message.error(msg);
+        }
+        actionRef.current?.reload?.();
+      }
     },
-    onError: (e) => {
-      message.error(e instanceof Error ? e.message : '操作失败');
+    [message],
+  );
+
+  const handleForceToggle = async () => {
+    if (!pendingToggle || !passwordInput) {
+      message.warning('请输入密码');
+      return;
+    }
+    try {
+      setPasswordSubmitting(true);
+      await forceToggle(pendingToggle.id, {
+        isGloballyEnabled: pendingToggle.enabled,
+        password: passwordInput,
+      });
+      message.success('操作成功');
+      setPasswordModalOpen(false);
+      setPendingToggle(null);
+      setPasswordInput('');
+      setDependencyErrorMessage('');
       actionRef.current?.reload?.();
-    },
-  });
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '验证失败');
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -187,8 +273,7 @@ export const ToggleList = () => {
             size="small"
             checked={row.isGloballyEnabled}
             disabled={!canConfigure(row.environment)}
-            loading={toggleGlobalMutation.isPending}
-            onChange={(v) => toggleGlobalMutation.mutate({ id: row.id, enabled: v })}
+            onChange={(v) => handleToggleGlobal(row, v)}
           />
           <Tag color={row.isGloballyEnabled ? 'green' : 'default'} style={{ margin: 0 }}>
             {row.isGloballyEnabled ? '开启' : '关闭'}
@@ -363,6 +448,8 @@ export const ToggleList = () => {
   );
 
   return (
+    <>
+      {contextHolder}
     <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
         <Header
           style={{
@@ -579,7 +666,54 @@ export const ToggleList = () => {
         />
 
         <DebugPanel currentEnv={activeEnv} />
+
+        <Modal
+          title={
+            <Space>
+              <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+              <span>二次确认 - 密码验证</span>
+            </Space>
+          }
+          open={passwordModalOpen}
+          onCancel={() => {
+            setPasswordModalOpen(false);
+            setPendingToggle(null);
+            setPasswordInput('');
+            setDependencyErrorMessage('');
+          }}
+          onOk={handleForceToggle}
+          okText="确认强行操作"
+          cancelText="取消"
+          confirmLoading={passwordSubmitting}
+          okButtonProps={{ danger: true }}
+          destroyOnClose
+        >
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <div
+              style={{
+                padding: 12,
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
+                borderRadius: 6,
+                color: '#ad6800',
+              }}
+            >
+              {dependencyErrorMessage}
+            </div>
+            <div>
+              <div style={{ marginBottom: 8, fontSize: 13 }}>请输入当前登录密码进行二次确认：</div>
+              <Input.Password
+                placeholder="请输入密码"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onPressEnter={handleForceToggle}
+                autoFocus
+              />
+            </div>
+          </Space>
+        </Modal>
       </Layout>
+    </>
   );
 };
 

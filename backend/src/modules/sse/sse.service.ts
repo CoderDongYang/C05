@@ -1,10 +1,10 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Subject, Observable } from 'rxjs';
 import { Redis } from 'ioredis';
-import { REDIS_UPDATE_CHANNEL } from '../redis/redis.service';
+import { REDIS_UPDATE_CHANNEL, ToggleChangePayload } from '../redis/redis.service';
 
 export interface SseMessage {
-  type: 'refresh' | 'ping';
+  type: 'refresh' | 'ping' | 'toggle_change';
   data: Record<string, unknown>;
   timestamp: string;
 }
@@ -34,11 +34,17 @@ export class SseService implements OnModuleInit, OnModuleDestroy {
       this.subscriber.on('message', (channel, message) => {
         if (channel === REDIS_UPDATE_CHANNEL) {
           try {
-            const parsed = JSON.parse(message) as { environment: string };
+            const parsed = JSON.parse(message) as ToggleChangePayload;
+            const now = new Date().toISOString();
             this.broadcast({
               type: 'refresh',
               data: { environment: parsed.environment },
-              timestamp: new Date().toISOString(),
+              timestamp: now,
+            });
+            this.broadcast({
+              type: 'toggle_change',
+              data: parsed as unknown as Record<string, unknown>,
+              timestamp: now,
             });
           } catch (e) {
             this.logger.error(`Failed to parse SSE message: ${e}`);

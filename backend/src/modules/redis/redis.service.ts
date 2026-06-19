@@ -6,6 +6,20 @@ import { PrismaService } from '../prisma/prisma.service';
 export const REDIS_TOGGLES_PREFIX = 'feature-toggles:';
 export const REDIS_UPDATE_CHANNEL = 'feature-toggles:update';
 
+export type ToggleChangeAction = 'enable' | 'disable' | 'create' | 'update' | 'delete';
+
+export interface ToggleChangePayload {
+  toggleId: number;
+  toggleKey: string;
+  environment: Environment;
+  action: ToggleChangeAction;
+  operatorId: number;
+  operatorName: string;
+  oldEnabled?: boolean;
+  newEnabled?: boolean;
+  timestamp: string;
+}
+
 export interface ToggleSnapshot {
   id: number;
   key: string;
@@ -58,9 +72,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       this.subscriber.on('message', (channel, message) => {
         if (channel === REDIS_UPDATE_CHANNEL) {
           try {
-            const { environment } = JSON.parse(message) as { environment: Environment };
-            this.logger.log(`Received cache update signal for env: ${environment}`);
-            this.refreshLocalCache(environment);
+            const parsed = JSON.parse(message) as ToggleChangePayload;
+            this.logger.log(`Received cache update signal for env: ${parsed.environment}`);
+            this.refreshLocalCache(parsed.environment);
           } catch (e) {
             this.logger.error(`Failed to parse update message: ${e}`);
           }
@@ -211,16 +225,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.localCache.get(environment) || {};
   }
 
-  async publishUpdate(environment: Environment): Promise<void> {
+  async publishUpdate(payload: ToggleChangePayload): Promise<void> {
     try {
-      await this.refreshCacheForEnvironment(environment);
+      await this.refreshCacheForEnvironment(payload.environment);
       if (this.client) {
         await this.client.publish(
           REDIS_UPDATE_CHANNEL,
-          JSON.stringify({ environment }),
+          JSON.stringify(payload),
         );
       }
-      this.logger.log(`Published update notification for ${environment}`);
+      this.logger.log(`Published update notification for ${payload.environment}: ${payload.toggleKey} ${payload.action} by ${payload.operatorName}`);
     } catch (e) {
       this.logger.error(`Failed to publish update: ${e}`);
     }

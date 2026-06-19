@@ -17,6 +17,7 @@ import {
   UpdateFeatureToggleDto,
   QueryFeatureToggleDto,
   DebugPreviewDto,
+  ForceToggleDto,
 } from './dto/feature-toggle.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/roles.decorator';
@@ -57,6 +58,16 @@ export class FeatureTogglesController {
     @Body() updateFeatureToggleDto: UpdateFeatureToggleDto,
   ) {
     return this.featureTogglesService.update(id, user, updateFeatureToggleDto);
+  }
+
+  @Post(':id/force-toggle')
+  @Permissions(Permission.FEATURE_READ)
+  forceToggle(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: JwtPayload,
+    @Body() forceToggleDto: ForceToggleDto,
+  ) {
+    return this.featureTogglesService.forceToggle(id, user, forceToggleDto);
   }
 
   @Delete(':id')

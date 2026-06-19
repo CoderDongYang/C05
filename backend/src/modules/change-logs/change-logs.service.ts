@@ -145,7 +145,25 @@ export class ChangeLogsService {
       },
     });
 
-    await this.redisService.publishUpdate(toggle.environment);
+    let operatorName = user.username;
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { username: true },
+      });
+      if (u) operatorName = u.username;
+    } catch (e) {}
+    await this.redisService.publishUpdate({
+      toggleId: toggle.id,
+      toggleKey: toggle.key,
+      environment: toggle.environment,
+      action: 'update',
+      operatorId: user.userId,
+      operatorName,
+      oldEnabled: toggle.isGloballyEnabled,
+      newEnabled: updatedToggle.isGloballyEnabled,
+      timestamp: new Date().toISOString(),
+    });
 
     this.logger.log(
       `User ${user.username} rolled back toggle ${toggle.key} (${toggle.environment}) using changelog #${changeLogId}`,

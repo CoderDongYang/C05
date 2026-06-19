@@ -40,6 +40,7 @@ export interface FeatureToggle {
   rolloutPercentage: number;
   whitelist: string[];
   attributeRules: AttributeRules | null;
+  dependencyKeys: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +54,7 @@ export interface CreateFeatureToggleRequest {
   rolloutPercentage?: number;
   whitelist?: string[];
   attributeRules?: AttributeRules | null;
+  dependencyKeys?: string[];
 }
 
 export interface UpdateFeatureToggleRequest {
@@ -62,6 +64,7 @@ export interface UpdateFeatureToggleRequest {
   rolloutPercentage?: number;
   whitelist?: string[];
   attributeRules?: AttributeRules | null;
+  dependencyKeys?: string[];
 }
 
 export interface ChangeLog {
@@ -133,4 +136,27 @@ export interface OwnerTreeNode {
   value: string;
   key: string;
   children?: OwnerTreeNode[];
+}
+
+export type ToggleChangeAction = 'enable' | 'disable' | 'create' | 'update' | 'delete';
+
+export interface ToggleChangeEvent {
+  toggleId: string;
+  toggleKey: string;
+  environment: Environment;
+  action: ToggleChangeAction;
+  operatorId: string;
+  operatorName: string;
+  oldEnabled?: boolean;
+  newEnabled?: boolean;
+  timestamp: string;
+  currentUserId?: string;
+}
+
+export interface VerifyPasswordRequest {
+  password: string;
+}
+
+export interface ForceToggleRequest extends VerifyPasswordRequest {
+  isGloballyEnabled: boolean;
 }

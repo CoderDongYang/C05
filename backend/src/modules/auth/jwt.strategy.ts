@@ -5,12 +5,24 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../../common/decorators/get-user.decorator';
 import { RoleName } from '../../common/enums/role.enum';
 import { ROLE_PERMISSIONS } from '../../common/config/permissions.config';
+import { Request } from 'express';
+
+const extractJwtFromRequest = (req: Request): string | null => {
+  const headerToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+  if (headerToken) {
+    return headerToken;
+  }
+  if (req.query && typeof req.query.token === 'string') {
+    return req.query.token;
+  }
+  return null;
+};
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private prisma: PrismaService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: extractJwtFromRequest,
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_SECRET || 'default-secret-key-change-in-prod',
     });

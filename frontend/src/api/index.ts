@@ -7,6 +7,7 @@ import type {
   DebugPreviewResponse,
   Environment,
   FeatureToggle,
+  ForceToggleRequest,
   ListFeatureTogglesQuery,
   LoginRequest,
   PaginatedResponse,
@@ -18,8 +19,8 @@ const adaptToggle = (raw: Record<string, unknown>): FeatureToggle => {
   const owner = (raw.owner as Record<string, unknown>) || {};
   const rawRules = raw.attributeRules as Record<string, unknown> | null | undefined;
   const attributeRules =
-    rawRules && typeof rawRules === 'object' && Object.keys(rawRules).length > 0
-      ? (rawRules as FeatureToggle['attributeRules'])
+    rawRules && typeof rawRules === 'object' && 'root' in rawRules
+      ? (rawRules as unknown as FeatureToggle['attributeRules'])
       : null;
   return {
     id: String(raw.id),
@@ -32,6 +33,7 @@ const adaptToggle = (raw: Record<string, unknown>): FeatureToggle => {
     rolloutPercentage: (raw.rolloutPercentage as number) || 0,
     whitelist: (raw.whitelist as string[]) || [],
     attributeRules,
+    dependencyKeys: (raw.dependencyKeys as string[]) || [],
     createdAt: new Date(raw.createdAt as string).toISOString(),
     updatedAt: new Date(raw.updatedAt as string).toISOString(),
   };
@@ -143,6 +145,17 @@ export const updateFeatureToggle = async (
     payload.ownerId = parseInt(String(payload.ownerId), 10);
   }
   const res = (await client.put(`/feature-toggles/${id}`, payload)) as {
+    code: number;
+    data: Record<string, unknown>;
+  };
+  return adaptToggle(res.data);
+};
+
+export const forceToggle = async (
+  id: string,
+  data: ForceToggleRequest,
+): Promise<FeatureToggle> => {
+  const res = (await client.post(`/feature-toggles/${id}/force-toggle`, data)) as {
     code: number;
     data: Record<string, unknown>;
   };
@@ -285,6 +298,18 @@ const createMockToggle = (env: Environment, idx: number): FeatureToggle => {
   ];
   const ownerNames = ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九'];
   const ownerIdx = idx % owners.length;
+  const mockDependencies: string[][] = [
+    [],
+    [],
+    ['new_homepage'],
+    ['new_payment_flow'],
+    [],
+    ['ai_chat'],
+    [],
+    ['new_homepage', 'dark_mode'],
+    [],
+    ['search_v2'],
+  ];
   return {
     id: `toggle-${env}-${idx}`,
     key: keys[idx % keys.length] + (idx >= keys.length ? `_${Math.floor(idx / keys.length) + 1}` : ''),
@@ -330,6 +355,7 @@ const createMockToggle = (env: Environment, idx: number): FeatureToggle => {
             },
           }
         : null,
+    dependencyKeys: mockDependencies[idx % mockDependencies.length],
     createdAt: new Date(Date.now() - idx * 86400000).toISOString(),
     updatedAt: new Date(Date.now() - Math.floor(idx / 2) * 3600000).toISOString(),
   };

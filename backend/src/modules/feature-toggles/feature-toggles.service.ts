@@ -3,16 +3,20 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
+  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { RedisService } from '../redis/redis.service';
+import { RedisService, ToggleChangeAction } from '../redis/redis.service';
 import { RolloutUtil } from '../../common/utils/rollout.util';
 import {
   CreateFeatureToggleDto,
   UpdateFeatureToggleDto,
   QueryFeatureToggleDto,
   DebugPreviewDto,
+  ForceToggleDto,
 } from './dto/feature-toggle.dto';
 import {
   Environment,
@@ -21,6 +25,13 @@ import {
   Permission,
 } from '../../common/enums/role.enum';
 import { JwtPayload } from '../../common/decorators/get-user.decorator';
+
+const MOCK_USERS = [
+  { id: 1, username: 'admin', password: 'admin123' },
+  { id: 2, username: 'dev', password: 'dev123' },
+  { id: 3, username: 'tester', password: 'test123' },
+  { id: 4, username: 'pm', password: 'pm123' },
+];
 
 const MOCK_TOGGLES = [
   {
@@ -32,6 +43,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 100,
     whitelist: [],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 1,
     owner: { id: 1, username: 'admin', email: 'admin@example.com' },
     createdAt: new Date('2024-01-01'),
@@ -46,6 +58,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 50,
     whitelist: ['user123', 'user456'],
     attributeRules: { level: { $gte: 5 } },
+    dependencyKeys: [],
     ownerId: 2,
     owner: { id: 2, username: 'dev', email: 'dev@example.com' },
     createdAt: new Date('2024-01-05'),
@@ -60,6 +73,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 0,
     whitelist: ['tester1'],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 2,
     owner: { id: 2, username: 'dev', email: 'dev@example.com' },
     createdAt: new Date('2024-01-10'),
@@ -74,6 +88,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 100,
     whitelist: [],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 3,
     owner: { id: 3, username: 'tester', email: 'tester@example.com' },
     createdAt: new Date('2024-01-08'),
@@ -88,6 +103,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 30,
     whitelist: ['testuser1'],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 4,
     owner: { id: 4, username: 'pm', email: 'pm@example.com' },
     createdAt: new Date('2024-01-12'),
@@ -102,6 +118,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 80,
     whitelist: ['vipuser1', 'vipuser2'],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 1,
     owner: { id: 1, username: 'admin', email: 'admin@example.com' },
     createdAt: new Date('2024-01-03'),
@@ -116,6 +133,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 10,
     whitelist: ['internal_user'],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 4,
     owner: { id: 4, username: 'pm', email: 'pm@example.com' },
     createdAt: new Date('2024-01-15'),
@@ -130,6 +148,7 @@ const MOCK_TOGGLES = [
     rolloutPercentage: 100,
     whitelist: [],
     attributeRules: {},
+    dependencyKeys: [],
     ownerId: 2,
     owner: { id: 2, username: 'dev', email: 'dev@example.com' },
     createdAt: new Date('2024-01-20'),
@@ -146,6 +165,92 @@ export class FeatureTogglesService {
     private redisService: RedisService,
     private rolloutUtil: RolloutUtil,
   ) {}
+
+  private async publishToggleChange(
+    user: JwtPayload,
+    toggle: { id: number; key: string; environment: Environment; isGloballyEnabled: boolean },
+    action: ToggleChangeAction,
+    oldEnabled?: boolean,
+  ) {
+    try {
+      let operatorName = user.username;
+      if (this.prisma.getIsConnected()) {
+        const u = await this.prisma.user.findUnique({
+          where: { id: user.userId },
+          select: { username: true },
+        });
+        if (u) operatorName = u.username;
+      }
+      await this.redisService.publishUpdate({
+        toggleId: toggle.id,
+        toggleKey: toggle.key,
+        environment: toggle.environment,
+        action,
+        operatorId: user.userId,
+        operatorName,
+        oldEnabled,
+        newEnabled: toggle.isGloballyEnabled,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) {
+      this.logger.error(`Failed to publish toggle change event: ${e}`);
+    }
+  }
+
+  private async validateDependencies(
+    environment: Environment,
+    dependencyKeys: string[],
+    enabling: boolean,
+  ): Promise<void> {
+    if (!enabling || !dependencyKeys || dependencyKeys.length === 0) {
+      return;
+    }
+
+    const disabledDeps: string[] = [];
+    for (const depKey of dependencyKeys) {
+      const depToggle = await this.prisma.featureToggle.findUnique({
+        where: {
+          key_environment: { key: depKey, environment },
+        },
+        select: { key: true, isGloballyEnabled: true },
+      });
+      if (!depToggle || !depToggle.isGloballyEnabled) {
+        disabledDeps.push(depKey);
+      }
+    }
+
+    if (disabledDeps.length > 0) {
+      throw new BadRequestException(
+        `开启失败，请先开启依赖开关 ${disabledDeps.join('、')}`,
+      );
+    }
+  }
+
+  private async validatePassword(userId: number, password: string): Promise<void> {
+    if (!password) {
+      throw new UnauthorizedException('请输入登录密码进行二次确认');
+    }
+
+    if (!this.prisma.getIsConnected()) {
+      const mockUser = MOCK_USERS.find((u) => u.id === userId);
+      if (!mockUser || mockUser.password !== password) {
+        throw new UnauthorizedException('密码错误');
+      }
+      return;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('用户不存在');
+    }
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('密码错误');
+    }
+  }
 
   private checkWritePermission(user: JwtPayload, env: Environment, fields: string[]): void {
     if (user.roleName === RoleName.ADMIN) {
@@ -251,6 +356,9 @@ export class FeatureTogglesService {
       throw new ConflictException('该环境下已存在相同 key 的开关');
     }
 
+    const dependencyKeys = dto.dependencyKeys ?? [];
+    await this.validateDependencies(dto.environment, dependencyKeys, dto.isGloballyEnabled ?? false);
+
     const toggle = await this.prisma.featureToggle.create({
       data: {
         key: dto.key,
@@ -261,6 +369,7 @@ export class FeatureTogglesService {
         rolloutPercentage: dto.rolloutPercentage ?? 0,
         whitelist: (dto.whitelist ?? []) as unknown as never,
         attributeRules: (dto.attributeRules ?? {}) as unknown as never,
+        dependencyKeys: dependencyKeys as unknown as never,
       },
       include: {
         owner: { select: { id: true, username: true, email: true } },
@@ -280,23 +389,50 @@ export class FeatureTogglesService {
           rolloutPercentage: dto.rolloutPercentage ?? 0,
           whitelist: dto.whitelist ?? [],
           attributeRules: dto.attributeRules ?? {},
+          dependencyKeys,
         } as unknown as never,
         changeType: ChangeType.CREATE,
       },
     });
 
-    await this.redisService.publishUpdate(dto.environment);
+    await this.publishToggleChange(user, toggle, 'create');
     return toggle;
   }
 
-  async update(id: number, user: JwtPayload, dto: UpdateFeatureToggleDto) {
-    const existing = await this.prisma.featureToggle.findUnique({ where: { id } });
+  async update(id: number, user: JwtPayload, dto: UpdateFeatureToggleDto, skipDependencyCheck = false) {
+    const existing = await this.prisma.featureToggle.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        key: true,
+        environment: true,
+        isGloballyEnabled: true,
+        dependencyKeys: true,
+        description: true,
+        ownerId: true,
+        rolloutPercentage: true,
+        whitelist: true,
+        attributeRules: true,
+      },
+    });
     if (!existing) {
       throw new NotFoundException('功能开关不存在');
     }
 
     const updateFields = Object.keys(dto);
     this.checkWritePermission(user, existing.environment, updateFields);
+
+    const existingDependencyKeys = (existing.dependencyKeys as string[]) || [];
+    const newDependencyKeys = dto.dependencyKeys !== undefined ? dto.dependencyKeys : existingDependencyKeys;
+    const willEnable =
+      dto.isGloballyEnabled !== undefined
+        ? dto.isGloballyEnabled
+        : existing.isGloballyEnabled;
+
+    const isTurningOn = dto.isGloballyEnabled === true && existing.isGloballyEnabled === false;
+    if (!skipDependencyCheck && isTurningOn) {
+      await this.validateDependencies(existing.environment, newDependencyKeys, willEnable);
+    }
 
     const oldValue = {
       description: existing.description,
@@ -305,6 +441,7 @@ export class FeatureTogglesService {
       rolloutPercentage: existing.rolloutPercentage,
       whitelist: existing.whitelist,
       attributeRules: existing.attributeRules,
+      dependencyKeys: existingDependencyKeys,
     };
 
     const toggle = await this.prisma.featureToggle.update({
@@ -316,6 +453,7 @@ export class FeatureTogglesService {
         rolloutPercentage: dto.rolloutPercentage,
         whitelist: (dto.whitelist ?? []) as unknown as never,
         attributeRules: (dto.attributeRules ?? {}) as unknown as never,
+        dependencyKeys: newDependencyKeys as unknown as never,
       },
       include: {
         owner: { select: { id: true, username: true, email: true } },
@@ -335,13 +473,26 @@ export class FeatureTogglesService {
           rolloutPercentage: toggle.rolloutPercentage,
           whitelist: toggle.whitelist,
           attributeRules: toggle.attributeRules,
+          dependencyKeys: newDependencyKeys,
         } as unknown as never,
         changeType: ChangeType.UPDATE,
       },
     });
 
-    await this.redisService.publishUpdate(existing.environment);
+    let action: ToggleChangeAction = 'update';
+    if (dto.isGloballyEnabled !== undefined && dto.isGloballyEnabled !== existing.isGloballyEnabled) {
+      action = dto.isGloballyEnabled ? 'enable' : 'disable';
+    }
+    await this.publishToggleChange(user, toggle, action, existing.isGloballyEnabled);
     return toggle;
+  }
+
+  async forceToggle(id: number, user: JwtPayload, dto: ForceToggleDto) {
+    await this.validatePassword(user.userId, dto.password);
+    const updateDto: UpdateFeatureToggleDto = {
+      isGloballyEnabled: dto.isGloballyEnabled,
+    };
+    return this.update(id, user, updateDto, true);
   }
 
   async remove(id: number, user: JwtPayload) {
@@ -376,7 +527,17 @@ export class FeatureTogglesService {
       await tx.featureToggle.delete({ where: { id } });
     });
 
-    await this.redisService.publishUpdate(existing.environment);
+    await this.publishToggleChange(
+      user,
+      {
+        id: existing.id,
+        key: existing.key,
+        environment: existing.environment,
+        isGloballyEnabled: existing.isGloballyEnabled,
+      },
+      'delete',
+      existing.isGloballyEnabled,
+    );
     return { success: true };
   }
 

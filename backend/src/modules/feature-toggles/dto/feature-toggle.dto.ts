@@ -45,6 +45,20 @@ export class CreateFeatureToggleDto {
   @IsOptional()
   @IsObject()
   attributeRules?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dependencyKeys?: string[];
+}
+
+export class ForceToggleDto {
+  @IsBoolean()
+  isGloballyEnabled: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  password: string;
 }
 
 export class UpdateFeatureToggleDto {
@@ -74,6 +88,11 @@ export class UpdateFeatureToggleDto {
   @IsOptional()
   @IsObject()
   attributeRules?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dependencyKeys?: string[];
 }
 
 export class QueryFeatureToggleDto {

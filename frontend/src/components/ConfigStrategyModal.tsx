@@ -1,11 +1,11 @@
-import { App as AntdApp, Modal, Progress, Slider, Input, InputNumber, Switch, Space, Tag, Divider, Row, Col, Typography, Form, TreeSelect } from 'antd';
+import { App as AntdApp, Modal, Progress, Slider, Input, InputNumber, Switch, Space, Tag, Divider, Row, Col, Typography, Form, TreeSelect, Select } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useToggleConfigStore } from '@/store/toggleStore';
 import { ConditionBuilder } from './ConditionBuilder';
 import { MOCK_OWNER_TREE, ENVIRONMENT_LABELS, formatWhitelist, parseWhitelist } from '@/utils';
 import type { FeatureToggle, UpdateFeatureToggleRequest, CreateFeatureToggleRequest, Environment } from '@/types';
-import { updateFeatureToggle, createFeatureToggle } from '@/api';
+import { updateFeatureToggle, createFeatureToggle, listFeatureToggles } from '@/api';
 
 const { Text, Title } = Typography;
 
@@ -34,9 +34,29 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
   const [description, setDescription] = useState('');
   const [ownerId, setOwnerId] = useState('');
   const [keyValue, setKeyValue] = useState('');
+  const [dependencyKeys, setDependencyKeys] = useState<string[]>([]);
+  const [depOptions, setDepOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [form] = Form.useForm();
 
   const isCreate = !toggle;
+
+  const displayEnv = toggle?.environment || environment;
+
+  useEffect(() => {
+    if (open && displayEnv) {
+      listFeatureToggles({ environment: displayEnv, page: 1, pageSize: 100 })
+        .then((res) => {
+          const options = res.items
+            .filter((t) => !toggle || t.id !== toggle.id)
+            .map((t) => ({
+              label: `${t.key}${t.description ? ` (${t.description})` : ''}`,
+              value: t.key,
+            }));
+          setDepOptions(options);
+        })
+        .catch(() => {});
+    }
+  }, [open, displayEnv, toggle]);
 
   useEffect(() => {
     if (open) {
@@ -46,6 +66,7 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
         setDescription(toggle.description);
         setOwnerId(toggle.ownerId);
         setKeyValue('');
+        setDependencyKeys(toggle.dependencyKeys || []);
         form.setFieldsValue({
           description: toggle.description,
           ownerId: toggle.ownerId,
@@ -56,6 +77,7 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
         setDescription('');
         setOwnerId('');
         setKeyValue('');
+        setDependencyKeys([]);
         form.resetFields();
       }
     }
@@ -97,6 +119,7 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
           description,
           ownerId,
           environment,
+          dependencyKeys,
           ...configPayload,
         };
         const created = await createFeatureToggle(createPayload as CreateFeatureToggleRequest);
@@ -107,6 +130,7 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
           ...configPayload,
           description: description || toggle.description,
           ownerId: ownerId || toggle.ownerId,
+          dependencyKeys,
         };
         const updated = await updateFeatureToggle(toggle.id, payload);
         message.success('配置保存成功');
@@ -125,8 +149,6 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
     reset();
     onClose();
   };
-
-  const displayEnv = toggle?.environment || environment;
 
   return (
     <Modal
@@ -196,6 +218,22 @@ export const ConfigStrategyModal = ({ open, toggle, environment, onClose, onSave
                 treeDefaultExpandAll
                 showSearch
                 treeNodeFilterProp="title"
+              />
+            </Form.Item>
+          </Col>
+          <Col span={24}>
+            <Form.Item label="依赖开关（开启前需先开启这些开关）">
+              <Select
+                mode="multiple"
+                placeholder="选择依赖的开关（可多选）"
+                value={dependencyKeys}
+                onChange={setDependencyKeys}
+                options={depOptions}
+                allowClear
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toString().toLowerCase().includes(input.toLowerCase())
+                }
               />
             </Form.Item>
           </Col>

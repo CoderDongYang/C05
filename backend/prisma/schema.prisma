@@ -63,6 +63,7 @@ model FeatureToggle {
   rolloutPercentage  Int              @default(0)
   whitelist          Json             @default("[]")
   attributeRules     Json             @default("{}")
+  dependencyKeys     Json             @default("[]")
   changeLogs         ChangeLog[]
 
   @@unique([key, environment])
