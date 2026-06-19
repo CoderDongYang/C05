@@ -33,7 +33,23 @@ const MOCK_USERS = [
   { id: 4, username: 'pm', password: 'pm123' },
 ];
 
-const MOCK_TOGGLES = [
+export interface MockToggle {
+  id: number;
+  key: string;
+  description: string | null;
+  environment: Environment;
+  isGloballyEnabled: boolean;
+  rolloutPercentage: number;
+  whitelist: string[];
+  attributeRules: Record<string, unknown>;
+  dependencyKeys: string[];
+  ownerId: number;
+  owner: { id: number; username: string; email: string };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const MOCK_TOGGLES: MockToggle[] = [
   {
     id: 1,
     key: 'payment.new_flow',
@@ -155,6 +171,8 @@ const MOCK_TOGGLES = [
     updatedAt: new Date('2024-02-01'),
   },
 ];
+
+let mockAutoIncrement = MOCK_TOGGLES.length + 1;
 
 @Injectable()
 export class FeatureTogglesService {
@@ -332,6 +350,15 @@ export class FeatureTogglesService {
   }
 
   async findOne(id: number) {
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock toggles data for findOne');
+      const toggle = MOCK_TOGGLES.find((t) => t.id === id);
+      if (!toggle) {
+        throw new NotFoundException('功能开关不存在');
+      }
+      return toggle;
+    }
+
     const toggle = await this.prisma.featureToggle.findUnique({
       where: { id },
       include: {
@@ -347,6 +374,62 @@ export class FeatureTogglesService {
   async create(user: JwtPayload, dto: CreateFeatureToggleDto) {
     this.checkWritePermission(user, dto.environment, Object.keys(dto));
 
+    const dependencyKeys = dto.dependencyKeys ?? [];
+
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock data for create');
+      const existing = MOCK_TOGGLES.find(
+        (t) => t.key === dto.key && t.environment === dto.environment,
+      );
+      if (existing) {
+        throw new ConflictException('该环境下已存在相同 key 的开关');
+      }
+
+      if (dto.isGloballyEnabled) {
+        const disabledDeps: string[] = [];
+        for (const depKey of dependencyKeys) {
+          const depToggle = MOCK_TOGGLES.find(
+            (t) => t.key === depKey && t.environment === dto.environment,
+          );
+          if (!depToggle || !depToggle.isGloballyEnabled) {
+            disabledDeps.push(depKey);
+          }
+        }
+        if (disabledDeps.length > 0) {
+          throw new BadRequestException(
+            `开启失败，请先开启依赖开关 ${disabledDeps.join('、')}`,
+          );
+        }
+      }
+
+      const mockUser = MOCK_USERS.find((u) => u.id === dto.ownerId);
+      const newId = mockAutoIncrement++;
+      const now = new Date();
+      const newToggle = {
+        id: newId,
+        key: dto.key,
+        description: dto.description || null,
+        environment: dto.environment,
+        isGloballyEnabled: dto.isGloballyEnabled ?? false,
+        rolloutPercentage: dto.rolloutPercentage ?? 0,
+        whitelist: dto.whitelist ?? [],
+        attributeRules: dto.attributeRules ?? {},
+        dependencyKeys,
+        ownerId: dto.ownerId,
+        owner: {
+          id: dto.ownerId,
+          username: mockUser?.username || String(dto.ownerId),
+          email: mockUser ? `${mockUser.username}@example.com` : '',
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
+      MOCK_TOGGLES.push(newToggle);
+
+      await this.publishToggleChange(user, newToggle, 'create');
+      return newToggle;
+    }
+
     const existing = await this.prisma.featureToggle.findUnique({
       where: {
         key_environment: { key: dto.key, environment: dto.environment },
@@ -356,7 +439,6 @@ export class FeatureTogglesService {
       throw new ConflictException('该环境下已存在相同 key 的开关');
     }
 
-    const dependencyKeys = dto.dependencyKeys ?? [];
     await this.validateDependencies(dto.environment, dependencyKeys, dto.isGloballyEnabled ?? false);
 
     const toggle = await this.prisma.featureToggle.create({
@@ -400,6 +482,67 @@ export class FeatureTogglesService {
   }
 
   async update(id: number, user: JwtPayload, dto: UpdateFeatureToggleDto, skipDependencyCheck = false) {
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock data for update');
+      const idx = MOCK_TOGGLES.findIndex((t) => t.id === id);
+      if (idx === -1) {
+        throw new NotFoundException('功能开关不存在');
+      }
+
+      const existing = MOCK_TOGGLES[idx];
+      this.checkWritePermission(user, existing.environment, Object.keys(dto));
+
+      const existingDependencyKeys = (existing.dependencyKeys as string[]) || [];
+      const newDependencyKeys = dto.dependencyKeys !== undefined ? dto.dependencyKeys : existingDependencyKeys;
+      const isTurningOn = dto.isGloballyEnabled === true && existing.isGloballyEnabled === false;
+
+      if (!skipDependencyCheck && isTurningOn) {
+        const disabledDeps: string[] = [];
+        for (const depKey of newDependencyKeys) {
+          const depToggle = MOCK_TOGGLES.find(
+            (t) => t.key === depKey && t.environment === existing.environment,
+          );
+          if (!depToggle || !depToggle.isGloballyEnabled) {
+            disabledDeps.push(depKey);
+          }
+        }
+        if (disabledDeps.length > 0) {
+          throw new BadRequestException(
+            `开启失败，请先开启依赖开关 ${disabledDeps.join('、')}`,
+          );
+        }
+      }
+
+      MOCK_TOGGLES[idx] = {
+        ...existing,
+        description: dto.description !== undefined ? dto.description : existing.description,
+        ownerId: dto.ownerId !== undefined ? dto.ownerId : existing.ownerId,
+        isGloballyEnabled: dto.isGloballyEnabled !== undefined ? dto.isGloballyEnabled : existing.isGloballyEnabled,
+        rolloutPercentage: dto.rolloutPercentage !== undefined ? dto.rolloutPercentage : existing.rolloutPercentage,
+        whitelist: dto.whitelist !== undefined ? dto.whitelist : existing.whitelist,
+        attributeRules: dto.attributeRules !== undefined ? dto.attributeRules : existing.attributeRules,
+        dependencyKeys: newDependencyKeys,
+        updatedAt: new Date(),
+      };
+
+      const updated = MOCK_TOGGLES[idx];
+      if (dto.ownerId !== undefined) {
+        const mockUser = MOCK_USERS.find((u) => u.id === dto.ownerId);
+        updated.owner = {
+          id: dto.ownerId,
+          username: mockUser?.username || String(dto.ownerId),
+          email: mockUser ? `${mockUser.username}@example.com` : '',
+        };
+      }
+
+      let action: ToggleChangeAction = 'update';
+      if (dto.isGloballyEnabled !== undefined && dto.isGloballyEnabled !== existing.isGloballyEnabled) {
+        action = dto.isGloballyEnabled ? 'enable' : 'disable';
+      }
+      await this.publishToggleChange(user, updated, action, existing.isGloballyEnabled);
+      return updated;
+    }
+
     const existing = await this.prisma.featureToggle.findUnique({
       where: { id },
       select: {
@@ -496,6 +639,32 @@ export class FeatureTogglesService {
   }
 
   async remove(id: number, user: JwtPayload) {
+    if (!this.prisma.getIsConnected()) {
+      this.logger.warn('DB not connected, using mock data for remove');
+      const idx = MOCK_TOGGLES.findIndex((t) => t.id === id);
+      if (idx === -1) {
+        throw new NotFoundException('功能开关不存在');
+      }
+
+      const existing = MOCK_TOGGLES[idx];
+      this.checkWritePermission(user, existing.environment, []);
+
+      MOCK_TOGGLES.splice(idx, 1);
+
+      await this.publishToggleChange(
+        user,
+        {
+          id: existing.id,
+          key: existing.key,
+          environment: existing.environment,
+          isGloballyEnabled: existing.isGloballyEnabled,
+        },
+        'delete',
+        existing.isGloballyEnabled,
+      );
+      return { success: true };
+    }
+
     const existing = await this.prisma.featureToggle.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('功能开关不存在');
